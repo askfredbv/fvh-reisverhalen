@@ -35,5 +35,12 @@ Alentejo/Portugal, Boedapest, Domaine de la Porte/Dolce, Montcabrier. Quality > 
   content-generation pipeline only.
 - **Artifacts:** `C:\claude\fvh.com\` (drafts/scratch), per the global routing rule.
 
+## ⛔ Prerequisite (gate) — foundation first
+**Don't start the bulk run until the fvh publish pipeline is proven rock-solid.** Frederik's rule
+(2026-05-31): the base infrastructure must "staan als een huis" before scaling — a bug in the pipeline
+multiplies across every article. That's *why* fvh is being perfected first. The "go" for this BHAG =
+when write → optimise → schema → publish → perf → social is confirmed flawless on the existing posts.
+
 ## Status
-**Parked / not started (2026-05-31).** Next step: Frederik points to the archive path → run the triage.
+**Parked / not started (2026-05-31)** — gated on the foundation above. Next step (when cleared): Frederik
+points to the archive path → run the triage.

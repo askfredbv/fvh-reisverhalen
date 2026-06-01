@@ -31,6 +31,10 @@ Alentejo/Portugal, Boedapest, Domaine de la Porte/Dolce, Montcabrier. Quality > 
 ## Relation to fvh-2027 (reference, don't duplicate)
 - **Voice/tone:** fvh-2027 `knowledge/tone-of-voice.md` + read 3–5 live articles before drafting.
 - **SEO/perf/publish lessons:** fvh-2027 `knowledge/drupal-schema-perf-lessons.md`, `content-pipeline.md`.
+- **Image pipeline & cleanup (read before bulk!):** fvh-2027 `knowledge/media-and-cleanup.md` — the
+  plain-vanilla beeld-standaard (Media Library, descriptive filenames, alt/caption, Squoosh strips EXIF),
+  the reusable `scripts/orphan-cleanup.php`, and the gotchas (revisions pin old files; title edit → slug
+  change → regenerate sitemap + GSC). Proven on the Boedapest pilot — this is the workflow you scale here.
 - **The published posts live on fvh.com** (code: `C:\Github\fvh.com-mirror`). This project = the
   content-generation pipeline only.
 - **Artifacts:** `C:\claude\fvh.com\` (drafts/scratch), per the global routing rule.

@@ -28,9 +28,12 @@ a stream of high-quality **travel articles** for frederikvanhecke.com. Travel is
   - ⚠️ **Voice caveat:** weight the **terse** reviews ("Best in town, simply put.") — the longer,
     adjective-heavy ones read as generic/possibly-AI and are NOT his authentic voice. See fvh-2027
     `knowledge/tone-of-voice.md`.
-  - Status (2026-06): Takeout export started by Frederik — **awaiting the file**. When it lands, parse
-    `Reviews.json` → trip/place shortlist + voice samples + BHAG seed table (place · date · rating · text
-    · dishes · coords). Drop it in `C:\claude\fvh.com\downloads\`.
+  - ✅ **Done (2026-06):** exports parsed → **21 trips** (timeline) × **600 reviews** (232 trip-matched).
+    The pipeline is built — see **`scripts/`** (`README.md` + parse-timeline / build-bhag-dataset /
+    build-xlsx). Outputs (LOCAL, never commit — contain location history + home address):
+    `C:\claude\fvh.com\exports\BHAG-reizen-master.xlsx` (master, 2 sheets) +
+    `C:\claude\fvh.com\downloads\bhag-trip-dossier.md` (writing-ready per-trip view).
+    Re-run the scripts after any fresh export.
 - **Timeline (location history)** — per-trip routes + dates. ⚠️ Google moved Timeline **on-device**
   (2024-25): **Takeout no longer exports it** (gives nothing useful). Export from the **phone's Maps app**
   instead: Android → profile → Timeline → ⋮ → Location & privacy settings → **Export Timeline data**;

@@ -18,6 +18,22 @@ a stream of high-quality **travel articles** for frederikvanhecke.com. Travel is
    Frederik's voice (Register B), day-by-day like the Parijs post. Assess quality before scaling.
 4. **Publish** — ⚠️ **strip EXIF/GPS** from photos first (privacy + perf); follow the fvh SEO/perf playbook.
 
+## Seed sources (besides the photo folders)
+- 🌟 **Google Maps reviews (Takeout → "Maps (your reviews)")** — Frederik is a Local Guide L8; his
+  reviews are a **ready-made, geo-tagged master list of where he's been**: place, address, **coords**,
+  date, star rating, **his own impression**, recommended dishes, and **photos**. This may be the fastest
+  way to **list all the trips at once** (cross-check / augment the folder-name triage) AND pre-seed each
+  article (the per-place take is already written, in his words). Trips already surfaced from a partial
+  glance: **Japan/Kyoto, Italy (Urbino/Perugia/Toscane), Paris, New York (family), Belgian local**.
+  - ⚠️ **Voice caveat:** weight the **terse** reviews ("Best in town, simply put.") — the longer,
+    adjective-heavy ones read as generic/possibly-AI and are NOT his authentic voice. See fvh-2027
+    `knowledge/tone-of-voice.md`.
+  - Status (2026-06): Takeout export started by Frederik — **awaiting the file**. When it lands, parse
+    `Reviews.json` → trip/place shortlist + voice samples + BHAG seed table (place · date · rating · text
+    · dishes · coords). Drop it in `C:\claude\fvh.com\downloads\`.
+- **Timeline (location history)** — per-trip route/dates; ⚠️ Google moved it on-device, so Takeout may be
+  partial/old — export recent trips from the phone's Maps app instead (pipeline step 2 "Enrich").
+
 ## Prioritisation
 Pick trips with **a story AND search demand**. GSC already shows demand for: Toscane/Gardameer,
 Alentejo/Portugal, Boedapest, Domaine de la Porte/Dolce, Montcabrier. Quality > quantity.

@@ -31,8 +31,11 @@ a stream of high-quality **travel articles** for frederikvanhecke.com. Travel is
   - Status (2026-06): Takeout export started by Frederik — **awaiting the file**. When it lands, parse
     `Reviews.json` → trip/place shortlist + voice samples + BHAG seed table (place · date · rating · text
     · dishes · coords). Drop it in `C:\claude\fvh.com\downloads\`.
-- **Timeline (location history)** — per-trip route/dates; ⚠️ Google moved it on-device, so Takeout may be
-  partial/old — export recent trips from the phone's Maps app instead (pipeline step 2 "Enrich").
+- **Timeline (location history)** — per-trip routes + dates. ⚠️ Google moved Timeline **on-device**
+  (2024-25): **Takeout no longer exports it** (gives nothing useful). Export from the **phone's Maps app**
+  instead: Android → profile → Timeline → ⋮ → Location & privacy settings → **Export Timeline data**;
+  iOS → Maps → Settings → Location & Privacy → Export Timeline data. File = **`location-history.json`**
+  (JSON; some EU users get **CSV**). Contains semantic trips/places+dates, not just raw GPS. (Pipeline step 2.)
 
 ## Prioritisation
 Pick trips with **a story AND search demand**. GSC already shows demand for: Toscane/Gardameer,

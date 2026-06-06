@@ -39,6 +39,18 @@ python <repo>\scripts\build-xlsx.py                # -> C:\claude\fvh.com\export
 - First run (2026-06): 51.443 timeline segments → **21 trips**; 600 reviews → **232 trip-matched**
   (Japan, New York, Malta, Rhodos, Portugal, Italy summers, …). Re-run anytime after a fresh export.
 
+## Photo layer (per-trip, for the writer)
+Two reusable helpers that turn a trip's **photo folder** (EXIF dates + GPS) into per-day notes the writer
+scans while drafting — same no-LLM, 100%-local approach. Both default to the Japan 2025 trip and take
+`["<photo folder>"] ["<trip regio>"]` as args, so they work for any trip.
+- `exif-cluster.py` — buckets photos **per day** (matched to the timeline) and labels each with the
+  nearest reviewed place where EXIF GPS survives → `japan-foto-per-dag.md` manifest (~10 hero shots/day).
+- `evening-meals.py` — clusters the **evening** photos (≥17:00 / <02:00) by GPS to the nearest place
+  (distance reported, no cap), so an *unreviewed* restaurant still surfaces — pins meals to day + place.
+
+⚠️ Photo folders live under `C:\claude\fvh.com\scratch\…` (working copies; NAS originals untouched) and
+the outputs under `…\downloads` — **never committed**. Only these scripts are tracked.
+
 ## Why no LLM
 The data is structured (coords, dates, country codes) → a data job, where scripts beat an LLM (faster,
 exact, free, private). Keep the LLM for **writing the articles** in Frederik's voice — not for the data.

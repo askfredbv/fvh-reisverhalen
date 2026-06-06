@@ -51,6 +51,48 @@ scans while drafting — same no-LLM, 100%-local approach. Both default to the J
 ⚠️ Photo folders live under `C:\claude\fvh.com\scratch\…` (working copies; NAS originals untouched) and
 the outputs under `…\downloads` — **never committed**. Only these scripts are tracked.
 
+## Per-trip dossier pipeline (4 bouwstenen, 2026-06)
+**The follow-up to the helpers above.** Built for the bulk reality: 1500-2000 photos per trip × 21 trips.
+End-to-end *per trip*: master photo folder → indexed → vision-tagged → merged with reviews/timeline → a
+local HTML contactsheet where you tick the heroes and export a `pick.csv`. All four scripts share one
+argument contract and are **idempotent** (sha1-keyed caches) — interruption is free, re-run is free.
+
+```bash
+TRIP=Japan
+PHOTOS="C:/claude/fvh.com/scratch/japan-werk/20250920 - Reis naar Japan"
+OUT="C:/claude/fvh.com/exports/trip-japan"
+
+python scripts/trip-photos-index.py  --photos "$PHOTOS" --trip "$TRIP" --out "$OUT"   # 1. fact-tabel
+python scripts/trip-vision-tag.py    --photos "$PHOTOS" --trip "$TRIP" --out "$OUT"   # 2. Gemma (nacht)
+python scripts/trip-merge.py         --photos "$PHOTOS" --trip "$TRIP" --out "$OUT"   # 3. dossier
+python scripts/trip-contactsheet.py  --photos "$PHOTOS" --trip "$TRIP" --out "$OUT"   # 4. HTML+picks
+```
+
+Per bouwsteen:
+- **1 · `trip-photos-index.py`** — scant de mastermap recursief (JPG/PNG/HEIC + MP4/MOV als video), parse't
+  EXIF (datum, GPS), fallback op filename-datum. → `photos.csv` (sha1, path, media_type, datetime, lat, lon).
+  Idempotent op sha1; ~25s voor 1900 files cold, ~5s warm.
+- **2 · `trip-vision-tag.py`** — stuurt elke **foto** door Ollama Gemma 12B (default) en parse't
+  caption/scène/bordtekst. Cache per sha1 → onderbreking gratis, herrun gratis. Ctrl-C-safe.
+  Video's worden expliciet overgeslagen. → `vision.csv` + `cache/vision/<sha1>.json`. ~15-30s/foto.
+- **3 · `trip-merge.py`** — joint `photos.csv` + `vision.csv` + `bhag-reviews-flat.csv` tot één
+  `manifest.csv` per reis: per foto dag + plaats (nearest review op GPS, default 40 km), near-dup-cluster
+  (default 90s + zelfde plaats), pre-rank (scène-prioriteit → één hero-kandidaat per cluster). Plaats
+  voor GPS-loze foto's wordt geërfd van de dichtste foto-met-GPS op dezelfde dag (gemarkeerd "(≈)").
+  Outlier-waarschuwing voor dagen >21d buiten het reis-zwaartepunt. → `manifest.csv` + `dag-overzicht.md`.
+- **4 · `trip-contactsheet.py`** — genereert thumbnails (256px, sha1-cached) en een **lokale, offline**
+  HTML met checkboxes: filter op alleen-hero / verberg-video, "selecteer alle hero's"-knop, "Download
+  pick"-knop → `pick.csv` met (sha1, filename, path, day, place, scene, caption) voor de
+  optimaliseren-en-upload-pijp (los hiervan). → `contactsheet.html` + `thumbs/`.
+
+⚠️ Identiek aan de helpers boven: inputs leven onder `scratch/`, outputs onder `exports/<trip>/`, **niets
+ervan committen**. Enkel de scripts.
+
+**Bewezen op NY (2026-06-06)**: 1198 media → 285 dup-clusters → 285 hero-kandidaten = 4,2× reductie van
+manueel-scrollwerk, vóór Gemma's scène-boost. End-to-end pipeline draait zonder code-aanpassing voor élke
+reis — alleen `--photos`, `--trip` en `--out` wisselen. Japan-Gemma-batch loopt op 2026-06-06; NY-batch
+volgt als de Japan-pilot z'n waarde bewezen heeft.
+
 ## Why no LLM
 The data is structured (coords, dates, country codes) → a data job, where scripts beat an LLM (faster,
 exact, free, private). Keep the LLM for **writing the articles** in Frederik's voice — not for the data.

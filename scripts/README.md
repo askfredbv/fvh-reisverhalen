@@ -98,18 +98,22 @@ reis — alleen `--photos`, `--trip` en `--out` wisselen. Japan-Gemma-batch loop
 volgt als de Japan-pilot z'n waarde bewezen heeft.
 
 ## Bouwsteen 5 — web-klaar maken (`trip-image-prep.py`)
-Draait ná de contactsheet, op `pick.csv` (je gekozen helden). Twee taken, bewust gescheiden:
-- **Deterministisch (Pillow, geen LLM):** auto-orient, resize (langste zijde `--maxpx`, default 1600),
-  naar RGB, **EXIF + GPS strippen**, comprimeren → `<out>/web/<seo-naam>.jpg`. Vervangt de handmatige
-  Squoosh-stap.
-- **Naam + alt (hergebruikt Gemma's caption uit `pick.csv`):** stelt een SEO-bestandsnaam
-  (plaats + caption → slug) en een concept-alt-tekst voor.
-- **Mens-poort:** alles landt in `<out>/image-prep-review.csv` (sha1, origineel, nieuwe naam, alt,
-  afmeting, kb) — **keur namen + alt na vóór upload.** Gemma's caption is een eerste jet en kan
-  plausibel-fout zijn (denk Sumitomo/Shimono). Idempotent via `.image-prep-cache.json`.
+Draait ná de contactsheet. **Twee invoer-workflows:** `pick.csv` (default) of **`--picks-dir <map>`**
+(een map met de foto's die je zelf koos door ze te kopiëren; gematcht op filename tegen `manifest.csv`
+voor naam/alt/plaats). Twee taken, bewust gescheiden:
+- **Deterministisch (Pillow, geen LLM):** auto-orient, resize op de **langste zijde**, naar RGB,
+  **EXIF + GPS strippen**, comprimeren met **budget-fit** (zakt quality tot onder het KB-budget, floor
+  q70) → `<out>/web/<rol>/<seo-naam>.jpg`. Vervangt de handmatige Squoosh-stap.
+- **Naam + alt:** SEO-bestandsnaam (plaats + Gemma's caption → slug) + concept-alt.
+- **Rol-besef (`--role hero|inline`):** zet de fvh-conventie en **waarschuwt als een HERO portret is**
+  (wordt gecropt in featured + OG-card). `hero` = 2000px/q88/≤500KB · `inline` = 1600px/q85/≤300KB (default).
+- **Mens-poort:** alles landt in `<out>/image-prep-review-<rol>.csv` (incl. **orientatie** + waarschuwing)
+  — **keur namen + alt na vóór upload** (Gemma's caption is een eerste jet, denk Sumitomo/Shimono).
+  Idempotent via `.image-prep-cache-<rol>.json`.
 
 ```bash
-python scripts/trip-image-prep.py --photos "$PHOTOS" --trip "$TRIP" --out "$OUT"
+python scripts/trip-image-prep.py --photos "$PHOTOS" --trip "$TRIP" --out "$OUT" --role inline
+python scripts/trip-image-prep.py --trip "$TRIP" --out "$OUT" --role hero --picks-dir "<gekozen-map>"
 ```
 
 ## Why no LLM

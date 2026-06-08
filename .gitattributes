@@ -1,0 +1,3 @@
+# Normaliseer regeleinden: LF in de repo én in de working tree.
+# Stopt de "LF will be replaced by CRLF"-churn en voorkomt history-renormalisatie.
+* text=auto eol=lf

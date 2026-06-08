@@ -19,7 +19,7 @@ Gemma is *dommekracht* (§12 working-with-frederik): caption en bordtekst zijn n
 Usage:
   python trip-vision-tag.py --photos <mastermap> --trip <regio> --out <dossier> [--limit N] [--model gemma4:12b]
 """
-import argparse, base64, csv, io, json, os, signal, sys, time
+import argparse, base64, csv, io, json, os, signal, socket, sys, time
 from pathlib import Path
 from urllib import request as _req, error as _err
 
@@ -83,11 +83,15 @@ def call_vision(b64: str, model: str) -> tuple[str, float]:
         "images": [b64],
         "stream": False,
         "think": False,
-        "options": {"temperature": 0.1},
+        # num_predict capt tokens — voorkomt hallucinatie-loops waar Gemma blijft
+        # doorgenereren (gezien 2026-06-06: één foto = 7,8KB output, ~50 min hang).
+        # 400 tokens is ruim voor CAPTION+SCENE+TEXT.
+        "options": {"temperature": 0.1, "num_predict": 400},
     }).encode()
     t0 = time.time()
     req = _req.Request(API, data=payload, headers={"Content-Type": "application/json"})
-    with _req.urlopen(req, timeout=600) as r:
+    # 120s timeout per foto — bij hang doorgaan i.p.v. eindeloos blokkeren.
+    with _req.urlopen(req, timeout=120) as r:
         resp = json.loads(r.read())
     return resp.get("response", "").strip(), time.time() - t0
 
@@ -213,9 +217,18 @@ def main():
             if i % 5 == 0 or i == len(todo):
                 print(f"  [{i}/{len(todo)}]  {dt:4.1f}s  gem {avg:4.1f}s  ETA {fmt_eta(eta)}   {path.name}")
         except _err.URLError as e:
+            # time-out = hangende foto → overslaan; échte connectiefout (Ollama down) → stoppen
+            if isinstance(getattr(e, "reason", None), (socket.timeout, TimeoutError)):
+                errors += 1
+                print(f"  [{i}/{len(todo)}] TIME-OUT op {path.name}, overgeslagen")
+                continue
             errors += 1
             print(f"  [{i}/{len(todo)}] OLLAMA-FOUT (draait hij?): {e}")
             break
+        except (socket.timeout, TimeoutError):
+            errors += 1
+            print(f"  [{i}/{len(todo)}] TIME-OUT op {path.name}, overgeslagen")
+            continue
         except Exception as e:
             errors += 1
             print(f"  [{i}/{len(todo)}] FOUT op {path.name}: {e}")

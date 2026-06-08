@@ -31,8 +31,8 @@ a stream of high-quality **travel articles** for frederikvanhecke.com. Travel is
   - ✅ **Done (2026-06):** exports parsed → **21 trips** (timeline) × **600 reviews** (232 trip-matched).
     The pipeline is built — see **`scripts/`** (`README.md` + parse-timeline / build-bhag-dataset /
     build-xlsx). Outputs (LOCAL, never commit — contain location history + home address):
-    `C:\claude\fvh.com\exports\BHAG-reizen-master.xlsx` (master, 2 sheets) +
-    `C:\claude\fvh.com\downloads\bhag-trip-dossier.md` (writing-ready per-trip view).
+    `<pad naar jouw exports>\BHAG-reizen-master.xlsx` (master, 2 sheets) +
+    `<pad naar jouw downloads>\bhag-trip-dossier.md` (writing-ready per-trip view).
     Re-run the scripts after any fresh export.
 - **Timeline (location history)** — per-trip routes + dates. ⚠️ Google moved Timeline **on-device**
   (2024-25): **Takeout no longer exports it** (gives nothing useful). Export from the **phone's Maps app**
@@ -57,9 +57,9 @@ Alentejo/Portugal, Boedapest, Domaine de la Porte/Dolce, Montcabrier. Quality > 
   plain-vanilla beeld-standaard (Media Library, descriptive filenames, alt/caption, Squoosh strips EXIF),
   the reusable `scripts/orphan-cleanup.php`, and the gotchas (revisions pin old files; title edit → slug
   change → regenerate sitemap + GSC). Proven on the Boedapest pilot — this is the workflow you scale here.
-- **The published posts live on fvh.com** (code: `C:\Github\fvh.com-mirror`). This project = the
+- **The published posts live on fvh.com** (code: `<pad naar jouw site-code>`). This project = the
   content-generation pipeline only.
-- **Artifacts:** `C:\claude\fvh.com\` (drafts/scratch), per the global routing rule.
+- **Artifacts:** `<pad naar jouw artifacts>` (drafts/scratch), per the global routing rule.
 
 ## ⛔ Prerequisite (gate) — foundation first
 **Don't start the bulk run until the fvh publish pipeline is proven rock-solid.** Frederik's rule

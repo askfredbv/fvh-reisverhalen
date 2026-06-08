@@ -1,0 +1,10 @@
+# Python dependencies for the scripts (Python 3.9+).
+# Everything else they use is in the standard library.
+
+Pillow        # read photos, EXIF/GPS, generate thumbnails
+pillow-heif   # support HEIC photos (iPhone)
+openpyxl      # build the Excel trip-master (build-xlsx.py)
+
+# The vision step (trip-vision-tag.py) talks to a local Ollama server over
+# HTTP (stdlib urllib — no extra package). You need Ollama installed and a
+# vision model pulled; see the README. That is not a pip dependency.

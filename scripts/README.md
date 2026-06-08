@@ -5,10 +5,14 @@ Turns Frederik's **Google Maps timeline** + **Maps reviews** into a structured t
 deterministic Python. 100% local.
 
 ## Inputs (export these first — both are personal, keep LOCAL)
-- **Timeline** → `Tijdlijn.json` — export from the **phone** (Google moved Timeline on-device 2024-25;
-  Takeout no longer has it): Android → Maps → profile → Timeline → ⋮ → Location & privacy → *Export
-  Timeline data*. (EU sometimes gives CSV instead of JSON.)
-- **Reviews** → `Reviews.json` — Google **Takeout** → "Maps (your reviews)" → in `Maps (mijn plaatsen)/`.
+Export at [takeout.google.com](https://takeout.google.com) and select the **Maps** data:
+- **Timeline** → `Tijdlijn.json` — Google **Takeout** → **"Maps (your places)"** gives the
+  location-history JSON. (EU exports sometimes hand you CSV instead of JSON.)
+- **Reviews** → `Reviews.json` — Google **Takeout** → **"Maps"** gives your reviews (and photos).
+
+(Google's product labels shift over time; selecting both Maps items yields the Timeline JSON +
+reviews. Confirmed working via Takeout 2026-06 — an earlier note here wrongly said Takeout no
+longer exports the timeline.)
 
 Put both under `C:\claude\fvh.com\downloads\` (the timeline JSON at the root; the Takeout unzipped under
 `Maps Takeout\`). ⚠️ The **outputs contain location history + home address — never commit them**; they
@@ -92,6 +96,21 @@ ervan committen**. Enkel de scripts.
 manueel-scrollwerk, vóór Gemma's scène-boost. End-to-end pipeline draait zonder code-aanpassing voor élke
 reis — alleen `--photos`, `--trip` en `--out` wisselen. Japan-Gemma-batch loopt op 2026-06-06; NY-batch
 volgt als de Japan-pilot z'n waarde bewezen heeft.
+
+## Bouwsteen 5 — web-klaar maken (`trip-image-prep.py`)
+Draait ná de contactsheet, op `pick.csv` (je gekozen helden). Twee taken, bewust gescheiden:
+- **Deterministisch (Pillow, geen LLM):** auto-orient, resize (langste zijde `--maxpx`, default 1600),
+  naar RGB, **EXIF + GPS strippen**, comprimeren → `<out>/web/<seo-naam>.jpg`. Vervangt de handmatige
+  Squoosh-stap.
+- **Naam + alt (hergebruikt Gemma's caption uit `pick.csv`):** stelt een SEO-bestandsnaam
+  (plaats + caption → slug) en een concept-alt-tekst voor.
+- **Mens-poort:** alles landt in `<out>/image-prep-review.csv` (sha1, origineel, nieuwe naam, alt,
+  afmeting, kb) — **keur namen + alt na vóór upload.** Gemma's caption is een eerste jet en kan
+  plausibel-fout zijn (denk Sumitomo/Shimono). Idempotent via `.image-prep-cache.json`.
+
+```bash
+python scripts/trip-image-prep.py --photos "$PHOTOS" --trip "$TRIP" --out "$OUT"
+```
 
 ## Why no LLM
 The data is structured (coords, dates, country codes) → a data job, where scripts beat an LLM (faster,

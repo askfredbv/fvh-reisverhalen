@@ -97,6 +97,16 @@ manueel-scrollwerk, vóór Gemma's scène-boost. End-to-end pipeline draait zond
 reis — alleen `--photos`, `--trip` en `--out` wisselen. Japan-Gemma-batch loopt op 2026-06-06; NY-batch
 volgt als de Japan-pilot z'n waarde bewezen heeft.
 
+## Alles in één: `run-trip.py`
+Draait bouwsteen 1→4 na elkaar voor één reis (stopt bij de eerste fout). `--photos/--trip/--out` gaan
+naar elke stap; `--model`/`--limit` naar vision-tag, `--reviews` naar merge. Smoke-test met `--limit 10`.
+
+```bash
+python scripts/run-trip.py --photos "$PHOTOS" --trip "$TRIP" --out "$OUT"
+```
+
+Daarna pick je je helden in de contactsheet en draai je bouwsteen 5 (`trip-image-prep`).
+
 ## Bouwsteen 5 — web-klaar maken (`trip-image-prep.py`)
 Draait ná de contactsheet. **Twee invoer-workflows:** `pick.csv` (default) of **`--picks-dir <map>`**
 (een map met de foto's die je zelf koos door ze te kopiëren; gematcht op filename tegen `manifest.csv`

@@ -204,8 +204,10 @@ def main():
             continue
         n_day = sum(len(v) for places in by_day[day].values() for v in places.values())
         parts.append(f'<details class="day" open><summary>{html.escape(day)}  <span style="color:var(--muted);font-size:13px;font-weight:400">· {n_day} items</span></summary>')
-        # Sorteer plaatsen op aantal items (grootste eerst)
-        places_sorted = sorted(by_day[day].items(), key=lambda kv: -sum(len(v) for v in kv[1].values()))
+        # Sorteer plaatsen chronologisch (vroegste foto eerst) — zodat de dag van vroeg naar laat leest
+        def _place_min_dt(groups):
+            return min((it.get("datetime", "") or "9999") for items in groups.values() for it in items)
+        places_sorted = sorted(by_day[day].items(), key=lambda kv: _place_min_dt(kv[1]))
         for place, groups in places_sorted:
             n_pl = sum(len(v) for v in groups.values())
             parts.append(f'<div class="place"><h3>{html.escape(place)}<span class="count">{n_pl} items · {len(groups)} clusters</span></h3>')

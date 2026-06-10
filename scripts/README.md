@@ -94,10 +94,11 @@ Per bouwsteen:
   (default 90s + zelfde plaats), pre-rank (scène-prioriteit → één hero-kandidaat per cluster). Plaats
   voor GPS-loze foto's wordt geërfd van de dichtste foto-met-GPS op dezelfde dag (gemarkeerd "(≈)").
   Outlier-waarschuwing voor dagen >21d buiten het reis-zwaartepunt. → `manifest.csv` + `dag-overzicht.md`.
-  - **Chronologie over tijdzones:** sorteert op het absolute UTC-moment (`dt_utc`) en labelt dagen in
-    de **bestemmings-tz** (modale offset), zodat een reis die tijdzones kruist niet door elkaar loopt
-    (telefoonklok wisselt mid-reis van tz). Een **anomalie-check** logt foto's wiens genormaliseerde
-    tijd >2u van de filename-tijd afwijkt (vangt foute device-klokken).
+  - **Chronologie over tijdzones:** sorteert primair op de **filename-tijd** (genormaliseerd naar één
+    tijdzone = de Windows-mapvolgorde; immuun voor foute telefoonklokken), met het EXIF-UTC-moment
+    (`dt_utc` → bestemmings-tz) als fallback. Een **klok-kruiscontrole** logt foto's wiens device-klok
+    >2u van de filename-tijd afwijkt. Plaatsen binnen een dag staan **chronologisch** (vroegste eerst),
+    niet op aantal, zodat de dag van vroeg naar laat leest.
   - **🔒 privacy-flag:** keyword-match op caption+sign_text (paspoort/ID/rijbewijs/boarding pass/bankkaart…)
     → `privacy_flag`-kolom + review-lijst. **Heuristisch, mens beslist — nooit auto-actie.**
 - **4 · `trip-contactsheet.py`** — genereert thumbnails (256px, sha1-cached, **EXIF-rotatie gerespecteerd**)

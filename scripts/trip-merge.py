@@ -107,19 +107,25 @@ def offset_to_tz(off: str):
     return timezone(sign * timedelta(hours=int(m.group(2)), minutes=int(m.group(3))))
 
 
-def canonical_local(p: dict, dest_tz):
-    """Lokale tijd in de bestemmings-tz, afgeleid van het absolute UTC-moment (dt_utc,
-    uit datum+offset in bouwsteen 1). Dat geeft één consistente klok over tijdzone-
-    grenzen heen → juiste chronologie en dag-indeling. Geen dt_utc (geen offset, bv.
-    een doorgestuurd beeld) → val terug op lokale tijd (exif/filename/mtime)."""
+def dtutc_local(p: dict, dest_tz):
+    """Het EXIF-UTC-moment (dt_utc, uit datum+offset) omgerekend naar de bestemmings-tz, of None."""
     du = (p.get("dt_utc") or "").strip()
     if du:
         try:
             return datetime.fromisoformat(du).astimezone(dest_tz).replace(tzinfo=None)
         except ValueError:
             pass
-    return (parse_dt(p.get("exif_date"))
-            or parse_dt(fname_dt(p.get("filename", "")))
+    return None
+
+
+def canonical_local(p: dict, dest_tz):
+    """Chronologische sleutel. PRIMAIR de filename-tijd: die is genormaliseerd naar één
+    tijdzone (= de Windows-mapvolgorde, die Frederik vertrouwt) en immuun voor foute
+    device-klokken. Pas daarna het EXIF-UTC-moment (dt_utc → bestemmings-tz), dan exif/mtime.
+    (Het EXIF-moment blijft de kruiscontrole: zie de klok-anomalie-flag in main.)"""
+    return (parse_dt(fname_dt(p.get("filename", "")))
+            or dtutc_local(p, dest_tz)
+            or parse_dt(p.get("exif_date"))
             or parse_dt(p.get("mtime")))
 
 
@@ -196,12 +202,16 @@ def main():
 
     # 3) plaats-mapping per foto via GPS
     rows = []
+    clock_anoms = []  # device-klok (dt_utc) wijkt >2u af van de gebruikte filename-tijd
     for p in photos:
         sha1 = p["sha1"]
         v = vision.get(sha1, {})
         lat, lng = to_float(p.get("lat")), to_float(p.get("lon"))
         dt = canonical_local(p, dest_tz)
         day = dt.date().isoformat() if dt else ""
+        fdt, xdt = parse_dt(fname_dt(p.get("filename", ""))), dtutc_local(p, dest_tz)
+        if fdt and xdt and abs((xdt - fdt).total_seconds()) > 2 * 3600:
+            clock_anoms.append((p["filename"], round(abs((xdt - fdt).total_seconds()) / 3600, 1)))
         place_naam, place_dist, place_lat, place_lng = "", "", "", ""
         if lat is not None and lng is not None and places:
             best, bestd = None, 1e9
@@ -294,7 +304,10 @@ def main():
         for r in by_day[day]:
             key = (r["place_name"] or "(onbekend)").replace(" (≈)", "")
             per_place[key].append(r)
-        for place, items in sorted(per_place.items(), key=lambda kv: -len(kv[1])):
+        # Plaatsen chronologisch (vroegste foto eerst), niet op aantal — zodat de dag van vroeg
+        # naar laat leest.
+        for place, items in sorted(per_place.items(),
+                                   key=lambda kv: min((x["_dt"] or datetime.max) for x in kv[1])):
             items.sort(key=lambda x: x["_dt"] or datetime.min)
             n_photo = sum(1 for x in items if x.get("media_type", "photo") == "photo")
             n_video = sum(1 for x in items if x.get("media_type") == "video")
@@ -346,19 +359,13 @@ def main():
               + (f" …+{len(outlier_days)-6}" if len(outlier_days) > 6 else ""))
     print(f"  per-dag overzicht: {out/'dag-overzicht.md'}")
 
-    # Tijdslijn-zelfcheck: de genormaliseerde tijd zou de filename-tijd moeten benaderen
-    # (filenames staan al in één tijdzone). Grote afwijking (>2u) = verdachte offset / tz-fout.
-    anomalies = []
-    for r in rows:
-        fdt = parse_dt(fname_dt(r["filename"]))
-        if fdt and r["_dt"]:
-            diff_h = abs((fdt - r["_dt"]).total_seconds()) / 3600
-            if diff_h > 2:
-                anomalies.append((r["filename"], round(diff_h, 1)))
-    n_checked = sum(1 for r in rows if parse_dt(fname_dt(r["filename"])) and r["_dt"])
-    print(f"  tijdslijn-check vs filename: {n_checked - len(anomalies)}/{n_checked} binnen 2u, {len(anomalies)} afwijkend")
-    for fn, h in anomalies[:6]:
-        print(f"    ⚠ {fn}: {h}u verschil (controleer offset/tz)")
+    # Klok-kruiscontrole: volgorde komt van de filename-tijd (Windows-volgorde). Waar het
+    # EXIF-moment (device-klok) daar >2u van afwijkt → een verdachte toestelklok, enkel ter info.
+    if clock_anoms:
+        print(f"  klok-check: {len(clock_anoms)} foto('s) met device-klok >2u naast de filename-tijd "
+              f"(filename gebruikt voor volgorde):")
+        for fn, h in clock_anoms[:6]:
+            print(f"    ⚠ {fn}: device-klok {h}u naast filename")
 
     # Privacy-flag: review-lijst van mogelijke identiteits-/betaaldocumenten (mens beslist).
     flagged = [r for r in rows if r.get("privacy_flag")]

@@ -74,7 +74,9 @@ python scripts/trip-contactsheet.py  --photos "$PHOTOS" --trip "$TRIP" --out "$O
 
 Per bouwsteen:
 - **1 · `trip-photos-index.py`** — scant de mastermap recursief (JPG/PNG/HEIC + MP4/MOV als video), parse't
-  EXIF (datum, GPS), fallback op filename-datum. → `photos.csv` (sha1, path, media_type, datetime, lat, lon).
+  EXIF (datum, GPS, **tz-offset**, **toestel**), fallback op filename-datum. → `photos.csv` (sha1, path,
+  media_type, datetime, **tz_offset, dt_utc** (absoluut UTC-moment uit datum+offset), **device**, lat, lon).
+  Print een **toestel-histogram** (multi-bron-reis; `onbekend` = doorgestuurd beeld/screenshot).
   Idempotent op sha1; ~25s voor 1900 files cold, ~5s warm.
 - **2 · `trip-vision-tag.py`** — stuurt elke **foto** door Ollama Gemma 12B (default) en parse't
   caption/scène/bordtekst. Cache per sha1 → onderbreking gratis, herrun gratis. Ctrl-C-safe.
@@ -92,10 +94,17 @@ Per bouwsteen:
   (default 90s + zelfde plaats), pre-rank (scène-prioriteit → één hero-kandidaat per cluster). Plaats
   voor GPS-loze foto's wordt geërfd van de dichtste foto-met-GPS op dezelfde dag (gemarkeerd "(≈)").
   Outlier-waarschuwing voor dagen >21d buiten het reis-zwaartepunt. → `manifest.csv` + `dag-overzicht.md`.
-- **4 · `trip-contactsheet.py`** — genereert thumbnails (256px, sha1-cached) en een **lokale, offline**
-  HTML met checkboxes: filter op alleen-hero / verberg-video, "selecteer alle hero's"-knop, "Download
-  pick"-knop → `pick.csv` met (sha1, filename, path, day, place, scene, caption) voor de
-  optimaliseren-en-upload-pijp (los hiervan). → `contactsheet.html` + `thumbs/`.
+  - **Chronologie over tijdzones:** sorteert op het absolute UTC-moment (`dt_utc`) en labelt dagen in
+    de **bestemmings-tz** (modale offset), zodat een reis die tijdzones kruist niet door elkaar loopt
+    (telefoonklok wisselt mid-reis van tz). Een **anomalie-check** logt foto's wiens genormaliseerde
+    tijd >2u van de filename-tijd afwijkt (vangt foute device-klokken).
+  - **🔒 privacy-flag:** keyword-match op caption+sign_text (paspoort/ID/rijbewijs/boarding pass/bankkaart…)
+    → `privacy_flag`-kolom + review-lijst. **Heuristisch, mens beslist — nooit auto-actie.**
+- **4 · `trip-contactsheet.py`** — genereert thumbnails (256px, sha1-cached, **EXIF-rotatie gerespecteerd**)
+  en een **lokale, offline** HTML met checkboxes: filter op alleen-hero / verberg-video / **verberg 🔒**,
+  "selecteer alle hero's"-knop, "Download pick"-knop → `pick.csv` met (sha1, filename, path, day, place,
+  scene, caption, **privacy_flag**) voor de optimaliseren-en-upload-pijp (los hiervan). Geflagde foto's
+  krijgen een **🔒-badge**. → `contactsheet.html` + `thumbs/`.
 
 ⚠️ Identiek aan de helpers boven: inputs leven onder `scratch/`, outputs onder `exports/<trip>/`, **niets
 ervan committen**. Enkel de scripts.
@@ -127,8 +136,9 @@ voor naam/alt/plaats). Twee taken, bewust gescheiden:
 - **Naam + alt:** SEO-bestandsnaam (plaats + Gemma's caption → slug) + concept-alt.
 - **Rol-besef (`--role hero|inline`):** zet de fvh-conventie en **waarschuwt als een HERO portret is**
   (wordt gecropt in featured + OG-card). `hero` = 2000px/q88/≤500KB · `inline` = 1600px/q85/≤300KB (default).
-- **Mens-poort:** alles landt in `<out>/image-prep-review-<rol>.csv` (incl. **orientatie** + waarschuwing)
-  — **keur namen + alt na vóór upload** (Gemma's caption is een eerste jet, denk Sumitomo/Shimono).
+- **Mens-poort:** alles landt in `<out>/image-prep-review-<rol>.csv` (incl. **orientatie**, **privacy_flag**
+  + waarschuwing) — **keur namen + alt na vóór upload** (Gemma's caption is een eerste jet, denk
+  Sumitomo/Shimono). **🔒 Geflagde foto's** (ID/document) geven een waarschuwing in de log + CSV.
   Idempotent via `.image-prep-cache-<rol>.json`.
 
 ```bash

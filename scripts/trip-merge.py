@@ -82,6 +82,23 @@ def fname_dt(name: str) -> str:
     return f"{y}-{mo}-{d}T{hh}:{mm}:{ss or '00'}"
 
 
+# Privacy-flag: markeert foto's van identiteits-/betaaldocumenten op basis van Gemma's
+# caption + bordtekst. HEURISTISCH → een REVIEW-flag (mens beslist), nooit auto-actie.
+PRIVACY_RE = re.compile(
+    r"\b(paspoort|passport|identiteitskaart|identity card|id[- ]?card|rijbewijs|"
+    r"driver'?s? licen[cs]e|driving licence|boarding pass|instapkaart|credit ?card|"
+    r"creditcard|bankkaart|bank card|debit card|betaalkaart|rijksregister|social security)\b",
+    re.I,
+)
+
+
+def privacy_flag(*texts) -> str:
+    hits = set()
+    for t in texts:
+        hits.update(m.lower() for m in PRIVACY_RE.findall(t or ""))
+    return ", ".join(sorted(hits))
+
+
 def offset_to_tz(off: str):
     m = re.match(r"^\s*([+-])(\d{2}):?(\d{2})\s*$", off or "")
     if not m:
@@ -208,6 +225,7 @@ def main():
             "scene": v.get("scene", ""),
             "sign_text": v.get("sign_text", ""),
             "device": p.get("device", ""),
+            "privacy_flag": privacy_flag(v.get("caption", ""), v.get("sign_text", "")),
             "_dt": dt,  # tijdelijk voor sortering
         })
 
@@ -255,7 +273,7 @@ def main():
     # 7) manifest.csv schrijven
     fields = ["sha1", "path_rel", "filename", "media_type", "datetime", "day",
               "lat", "lon", "place_name", "place_dist_km", "place_lat", "place_lng",
-              "caption", "scene", "sign_text", "device", "dup_group", "prerank"]
+              "caption", "scene", "sign_text", "device", "privacy_flag", "dup_group", "prerank"]
     out_csv = out / "manifest.csv"
     with out_csv.open("w", encoding="utf-8", newline="") as f:
         w = csv.DictWriter(f, fieldnames=fields)
@@ -341,6 +359,13 @@ def main():
     print(f"  tijdslijn-check vs filename: {n_checked - len(anomalies)}/{n_checked} binnen 2u, {len(anomalies)} afwijkend")
     for fn, h in anomalies[:6]:
         print(f"    ⚠ {fn}: {h}u verschil (controleer offset/tz)")
+
+    # Privacy-flag: review-lijst van mogelijke identiteits-/betaaldocumenten (mens beslist).
+    flagged = [r for r in rows if r.get("privacy_flag")]
+    if flagged:
+        print(f"  🔒 privacy-flag: {len(flagged)} foto('s) lijken op ID/document — NIET publiceren zonder check:")
+        for r in flagged[:8]:
+            print(f"    · {r['filename']}  ({r['privacy_flag']})")
 
 
 if __name__ == "__main__":

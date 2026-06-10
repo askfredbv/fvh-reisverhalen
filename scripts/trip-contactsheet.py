@@ -47,7 +47,7 @@ def gen_thumb(src: Path, dst: Path, maxdim: int = 256) -> bool:
 
 
 CSS = """
-:root{--bg:#0e1014;--card:#181c22;--ink:#e6e7e9;--muted:#9aa0a6;--accent:#3ddc84;--hero:#ffd166}
+:root{--bg:#0e1014;--card:#181c22;--ink:#e6e7e9;--muted:#9aa0a6;--accent:#3ddc84;--hero:#ffd166;--flag:#ff5d5d}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 system-ui,sans-serif}
 header{position:sticky;top:0;background:#0e1014ee;backdrop-filter:blur(6px);padding:12px 20px;border-bottom:1px solid #222;z-index:10;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
@@ -82,6 +82,9 @@ main{padding:16px 20px 80px}
 .tile input:checked ~ img,.tile input:checked ~ .videoph{outline:3px solid var(--accent);outline-offset:-3px}
 body.hero-only .tile:not(.hero){display:none}
 body.hide-video .tile.video{display:none}
+body.hide-flagged .tile.flagged{display:none}
+.tile.flagged img,.tile.flagged .videoph{outline:2px solid var(--flag);outline-offset:-2px}
+.tile .lock{position:absolute;top:5px;left:30px;font-size:14px;z-index:2;filter:drop-shadow(0 0 2px #000)}
 """
 
 JS = """
@@ -98,6 +101,9 @@ document.getElementById('hero-only').addEventListener('change', e => {
 document.getElementById('hide-video').addEventListener('change', e => {
   document.body.classList.toggle('hide-video', e.target.checked);
 });
+document.getElementById('hide-flagged').addEventListener('change', e => {
+  document.body.classList.toggle('hide-flagged', e.target.checked);
+});
 document.getElementById('select-heroes').addEventListener('click', () => {
   document.querySelectorAll('.tile.hero input').forEach(i => { i.checked = true; });
   recount();
@@ -111,10 +117,10 @@ document.getElementById('toggle-all').addEventListener('click', () => {
 });
 
 document.getElementById('export').addEventListener('click', () => {
-  const rows = [['sha1','filename','path_rel','day','place_name','scene','caption']];
+  const rows = [['sha1','filename','path_rel','day','place_name','scene','caption','privacy_flag']];
   document.querySelectorAll('.tile input:checked').forEach(i => {
     const t = i.closest('.tile');
-    rows.push([t.dataset.sha1, t.dataset.filename, t.dataset.path, t.dataset.day, t.dataset.place, t.dataset.scene, t.dataset.caption]);
+    rows.push([t.dataset.sha1, t.dataset.filename, t.dataset.path, t.dataset.day, t.dataset.place, t.dataset.scene, t.dataset.caption, t.dataset.privacy]);
   });
   const csv = rows.map(r => r.map(c => '"' + (c||'').replaceAll('"','""') + '"').join(',')).join('\\n');
   const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
@@ -186,6 +192,7 @@ def main():
 <span class="spacer"></span>
 <label class="toggle"><input type="checkbox" id="hero-only"> alleen hero ★</label>
 <label class="toggle"><input type="checkbox" id="hide-video"> verberg video</label>
+<label class="toggle"><input type="checkbox" id="hide-flagged"> verberg 🔒</label>
 <button class="secondary" id="toggle-all">expand/collapse</button>
 <button class="secondary" id="select-heroes">selecteer alle hero's</button>
 <button class="secondary" id="clear">wis selectie</button>
@@ -218,9 +225,11 @@ def main():
                     text = it.get("sign_text", "")
                     is_video = it.get("media_type") == "video"
                     is_hero = it.get("prerank") == "1"
+                    privacy = it.get("privacy_flag", "")
                     cls = "tile"
                     if is_hero: cls += " hero"
                     if is_video: cls += " video"
+                    if privacy: cls += " flagged"
                     data = (
                         f'data-sha1="{html.escape(sha1)}" '
                         f'data-filename="{html.escape(fname)}" '
@@ -228,8 +237,10 @@ def main():
                         f'data-day="{html.escape(day)}" '
                         f'data-place="{html.escape(place)}" '
                         f'data-scene="{html.escape(scene)}" '
-                        f'data-caption="{html.escape(caption)}"'
+                        f'data-caption="{html.escape(caption)}" '
+                        f'data-privacy="{html.escape(privacy)}"'
                     )
+                    lock = f'<span class="lock" title="mogelijk ID/document: {html.escape(privacy)}">🔒</span>' if privacy else ""
                     if is_video:
                         media = f'<div class="videoph">{html.escape(fname)}</div>'
                     else:
@@ -242,6 +253,7 @@ def main():
                     parts.append(
                         f'<div class="{cls}" {data} title="{tooltip}">'
                         f'<input type="checkbox">'
+                        f'{lock}'
                         f'{media}'
                         f'<div class="meta"><b>{t_short}</b> {scene_html}{html.escape(fname[:18])}</div>'
                         f'{text_html}'

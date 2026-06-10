@@ -95,6 +95,7 @@ def meta_from_row(r: dict) -> dict:
         "place": (r.get("place_name") or "").replace(" (≈)", "").replace("(onbekend)", "").strip(),
         "caption": (r.get("caption") or "").strip(),
         "day": r.get("day", ""),
+        "privacy": (r.get("privacy_flag") or "").strip(),
     }
 
 
@@ -160,7 +161,7 @@ def main():
     cache = json.loads(cache_path.read_text("utf-8")) if cache_path.exists() else {}
 
     used, review = set(), []
-    done = skipped = warns = 0
+    done = skipped = warns = flagged = 0
     for src, m in items:
         if src.suffix.lower() not in IMG_EXTS or not src.exists():
             print(f"  ontbreekt/overslaan: {src}"); skipped += 1; continue
@@ -199,21 +200,25 @@ def main():
         if args.role == "hero" and ori == "portret":
             warn = "HERO is portret — wordt gecropt in featured + OG-card; kies liever landschap"
             print(f"  ⚠️  {name}: {warn}"); warns += 1
+        pf = m.get("privacy", "")
+        if pf:
+            print(f"  🔒 {name}: mogelijk ID/document ({pf}) — NIET publiceren zonder check"); flagged += 1
         review.append({
             "sha1": m.get("sha1", ""), "origineel": src.name, "nieuwe_naam": name,
             "rol": args.role, "orientatie": ori, "alt_concept": caption,
             "dag": m.get("day", ""), "plaats": place, "afmeting": f"{w}x{h}",
-            "kb": kb, "quality": q_used, "waarschuwing": warn,
+            "kb": kb, "quality": q_used, "privacy_flag": pf, "waarschuwing": warn,
         })
 
     cache_path.write_text(json.dumps(cache, ensure_ascii=False, indent=0), "utf-8")
     rev = out / f"image-prep-review-{args.role}.csv"
     cols = ["sha1", "origineel", "nieuwe_naam", "rol", "orientatie", "alt_concept",
-            "dag", "plaats", "afmeting", "kb", "quality", "waarschuwing"]
+            "dag", "plaats", "afmeting", "kb", "quality", "privacy_flag", "waarschuwing"]
     with open(rev, "w", newline="", encoding="utf-8") as f:
         wc = csv.DictWriter(f, fieldnames=cols); wc.writeheader(); wc.writerows(review)
 
-    print(f"[{args.trip}] rol={args.role}: {done} verwerkt, {skipped} overgeslagen, {warns} waarschuwing(en) → {web}")
+    print(f"[{args.trip}] rol={args.role}: {done} verwerkt, {skipped} overgeslagen, {warns} waarschuwing(en)"
+          + (f", 🔒 {flagged} privacy-flag(s)" if flagged else "") + f" → {web}")
     print(f"Review (naam + alt + oriëntatie nakijken vóór upload): {rev}")
 
 

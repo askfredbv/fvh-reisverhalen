@@ -30,6 +30,11 @@ import argparse, csv, json, re, sys, unicodedata
 from pathlib import Path
 
 try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
+try:
     from PIL import Image, ImageOps
 except ImportError:
     sys.exit("Pillow ontbreekt — pip install -r requirements.txt")

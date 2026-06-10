@@ -102,8 +102,12 @@ def main():
     needle = args.trip.lower()
     places = []  # (lat, lng, naam, adres, sterren)
     seen_keys = set()
+    all_reis = set()  # alle reis-labels (voor een nuttige hint als de needle niets matcht)
     with rev_path.open("r", encoding="utf-8-sig", newline="") as f:
         for r in csv.DictReader(f):
+            reis = r.get("reis", "").strip()
+            if reis:
+                all_reis.add(reis)
             if needle not in r.get("reis", "").lower():
                 continue
             lat, lng = to_float(r.get("lat")), to_float(r.get("lng"))
@@ -119,6 +123,14 @@ def main():
                 "sterren": r.get("sterren", ""),
             })
     print(f"[trip-merge] trip='{args.trip}'  reviews-plaatsen (uniek): {len(places)}")
+    if not places:
+        # De 'reis'-labels zijn datum-gecodeerd per regio (bv. '... (VS-oostkust)'), NIET de
+        # mensennaam van de reis. Een needle die niets matcht = stil alle plaatsen 'onbekend'.
+        print(f"  ⚠️  GEEN reviews-plaats gematcht op --trip '{args.trip}' — elke foto wordt '(onbekend)'.")
+        print("      --trip is een substring-match op de 'reis'-kolom. Beschikbare labels:")
+        for lbl in sorted(all_reis):
+            print(f"        · {lbl}")
+        print("      Herstart met een needle die in het juiste label zit (bv. een regio-woord of jaar).")
 
     # 3) plaats-mapping per foto via GPS
     rows = []

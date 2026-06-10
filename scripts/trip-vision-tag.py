@@ -24,7 +24,9 @@ from pathlib import Path
 from urllib import request as _req, error as _err
 
 try:
-    sys.stdout.reconfigure(encoding="utf-8")
+    # line_buffering=True: voortgang verschijnt live in een log/redirect (background/
+    # scheduled runs bufferden anders stdout -> lege log tijdens de hele batch).
+    sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)
 except Exception:
     pass
 
@@ -137,6 +139,38 @@ def fmt_eta(seconds: float) -> str:
     return f"{h}h{m:02d}m" if h else f"{m}m{s:02d}s"
 
 
+def keep_system_awake():
+    """Houd Windows wakker zolang de batch loopt — voorkomt Modern Standby (S0), die een
+    nachtelijke run suspendeert ook al staat 'sleep after' op nooit (gezien 2026-06-09:
+    batch viel stil ~30 min na idle). Geeft een release-callable terug (no-op buiten Windows)."""
+    if sys.platform != "win32":
+        return lambda: None
+    try:
+        import ctypes
+        ES_CONTINUOUS = 0x80000000
+        ES_SYSTEM_REQUIRED = 0x00000001
+        ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)
+        return lambda: ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS)
+    except Exception:
+        return lambda: None
+
+
+def gpu_sanity_warn(model: str) -> None:
+    """Waarschuw één keer als Ollama het model 100% op CPU draait (geen GPU-offload) — dat is
+    ~2-3× trager. Veelvoorkomende oorzaak: Ollama koos Vulkan i.p.v. CUDA (start met OLLAMA_VULKAN=0)."""
+    try:
+        with _req.urlopen("http://localhost:11434/api/ps", timeout=10) as r:
+            data = json.loads(r.read())
+    except Exception:
+        return
+    for m in data.get("models", []):
+        if model in (m.get("name", ""), m.get("model", "")) or m.get("name", "").startswith(model):
+            if m.get("size", 0) and m.get("size_vram", 0) == 0:
+                print("  ⚠️  model draait 100% op CPU (geen GPU-offload) — ~2-3× trager dan op GPU.")
+                print("      Check `ollama ps`; veelal fix: herstart Ollama met OLLAMA_VULKAN=0 (forceert CUDA).")
+            return
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--photos", required=True)
@@ -180,12 +214,14 @@ def main():
         print("\n[trip-vision-tag] interrupt opgevangen — flush vision.csv en stop netjes…")
     signal.signal(signal.SIGINT, _on_sigint)
 
+    release_awake = keep_system_awake()  # Windows: voorkom Modern Standby tijdens de batch
     t_start = time.time()
     times: list[float] = []  # sliding window voor ETA
     SKIP_HEIC = not HEIC_OK
     done = 0
     skipped_heic = 0
     errors = 0
+    gpu_checked = False
 
     for i, r in enumerate(todo, 1):
         if interrupted["flag"]:
@@ -208,6 +244,9 @@ def main():
             atomic_write_json(cache_dir / f"{sha1}.json", parsed)
             cached[sha1] = parsed
             done += 1
+            if not gpu_checked:  # eenmalig: waarschuw als het model op CPU draait
+                gpu_sanity_warn(args.model)
+                gpu_checked = True
             times.append(dt)
             if len(times) > 30:
                 times.pop(0)
@@ -234,6 +273,7 @@ def main():
             print(f"  [{i}/{len(todo)}] FOUT op {path.name}: {e}")
             continue
 
+    release_awake()  # keep-awake assertie loslaten
     write_vision_csv(vision_csv, cached)
     print(f"\n[trip-vision-tag] klaar in {fmt_eta(time.time() - t_start)}")
     print(f"  verwerkt deze run: {done}   skipped (HEIC, geen pillow-heif): {skipped_heic}   errors: {errors}")

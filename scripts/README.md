@@ -78,9 +78,17 @@ Per bouwsteen:
   Idempotent op sha1; ~25s voor 1900 files cold, ~5s warm.
 - **2 · `trip-vision-tag.py`** — stuurt elke **foto** door Ollama Gemma 12B (default) en parse't
   caption/scène/bordtekst. Cache per sha1 → onderbreking gratis, herrun gratis. Ctrl-C-safe.
-  Video's worden expliciet overgeslagen. → `vision.csv` + `cache/vision/<sha1>.json`. ~15-30s/foto.
+  Video's worden expliciet overgeslagen. → `vision.csv` + `cache/vision/<sha1>.json`. ~8s/foto op GPU.
+  - **Houdt Windows wakker** zolang de batch loopt (`SetThreadExecutionState`) — voorkomt Modern
+    Standby (S0) die een nachtrun suspendeert, ook al staat "sleep after" op nooit.
+  - **Waarschuwt bij 100% CPU** (geen GPU-offload, ~2-3× trager). Veelal fix: herstart Ollama met
+    **`OLLAMA_VULKAN=0`** (forceert CUDA i.p.v. de trage Vulkan-default in 0.30.7).
+  - Output is line-buffered → live voortgang in een background/scheduled log.
 - **3 · `trip-merge.py`** — joint `photos.csv` + `vision.csv` + `bhag-reviews-flat.csv` tot één
-  `manifest.csv` per reis: per foto dag + plaats (nearest review op GPS, default 40 km), near-dup-cluster
+  `manifest.csv` per reis: per foto dag + plaats (nearest review op GPS, default 40 km), near-dup-cluster.
+  ⚠️ `--trip` is een **substring-match op de datum-gecodeerde `reis`-kolom** (bv. `VS-oostkust`,
+  niet "New York"); matcht de needle niets, dan **lijst het script de beschikbare labels** zodat je
+  de juiste kiest (anders wordt elke foto stil '(onbekend)')
   (default 90s + zelfde plaats), pre-rank (scène-prioriteit → één hero-kandidaat per cluster). Plaats
   voor GPS-loze foto's wordt geërfd van de dichtste foto-met-GPS op dezelfde dag (gemarkeerd "(≈)").
   Outlier-waarschuwing voor dagen >21d buiten het reis-zwaartepunt. → `manifest.csv` + `dag-overzicht.md`.

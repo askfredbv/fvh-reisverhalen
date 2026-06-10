@@ -26,7 +26,7 @@ except Exception:
     pass
 
 try:
-    from PIL import Image
+    from PIL import Image, ImageOps
 except ImportError:
     sys.exit("pip install pillow")
 
@@ -35,7 +35,9 @@ def gen_thumb(src: Path, dst: Path, maxdim: int = 256) -> bool:
     if dst.exists():
         return True
     try:
-        im = Image.open(src).convert("RGB")
+        im = Image.open(src)
+        im = ImageOps.exif_transpose(im)  # respecteer EXIF-rotatie (anders liggen portretten op hun kant)
+        im = im.convert("RGB")
         im.thumbnail((maxdim, maxdim))
         im.save(dst, "JPEG", quality=80)
         return True

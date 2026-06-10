@@ -100,10 +100,12 @@ Per bouwsteen:
 ⚠️ Identiek aan de helpers boven: inputs leven onder `scratch/`, outputs onder `exports/<trip>/`, **niets
 ervan committen**. Enkel de scripts.
 
-**Bewezen op NY (2026-06-06)**: 1198 media → 285 dup-clusters → 285 hero-kandidaten = 4,2× reductie van
-manueel-scrollwerk, vóór Gemma's scène-boost. End-to-end pipeline draait zonder code-aanpassing voor élke
-reis — alleen `--photos`, `--trip` en `--out` wisselen. Japan-Gemma-batch loopt op 2026-06-06; NY-batch
-volgt als de Japan-pilot z'n waarde bewezen heeft.
+**Bewezen op NY (2026-06-10)**: end-to-end gedraaid op de volle set — 1198 media → 1172 foto's
+vision-getagd (0 errors, ~8s/foto op GPU) → merge met `--trip "VS-oostkust"` → 285 dup-clusters /
+285 hero-kandidaten, 100% captions en 99% plaats in `manifest.csv`. Pipeline draait zonder
+code-aanpassing voor élke reis — alleen `--photos`, `--trip` en `--out` wisselen. De infra-lessen van
+die run (Modern-Standby keep-awake, `OLLAMA_VULKAN=0` voor CUDA, de `reis`-label-needle) zitten nu
+ingebouwd in de scripts.
 
 ## Alles in één: `run-trip.py`
 Draait bouwsteen 1→4 na elkaar voor één reis (stopt bij de eerste fout). `--photos/--trip/--out` gaan

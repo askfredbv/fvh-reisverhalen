@@ -68,5 +68,9 @@ multiplies across every article. That's *why* fvh is being perfected first. The 
 when write → optimise → schema → publish → perf → social is confirmed flawless on the existing posts.
 
 ## Status
-**Parked / not started (2026-05-31)** — gated on the foundation above. Next step (when cleared): Frederik
-points to the archive path → run the triage.
+**Content-pijp bewezen op de NY-pilot (2026-06-10)** — bouwsteen 1→5 (index → vision-tag → merge →
+contactsheet → image-prep) end-to-end gedraaid op de volle NY-set (1172 foto's vision-getagd, dossier
++ web-beelden), en de scripts gehard met de infra-lessen van die run (zie `scripts/README.md`).
+⚠️ **De bulk-run + publicatie blijven gated** op de publish-foundation hierboven — de NY-run was een
+pilot/hardening-test, niet de start van de bulk. Volgende stap: heldenkeuze in de NY-contactsheet →
+het NY-artikel uitschrijven; pas daarna schalen naar de overige reizen.

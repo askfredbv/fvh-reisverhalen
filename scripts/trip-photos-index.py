@@ -68,10 +68,22 @@ def to_deg(rat) -> float:
     return float(d) + float(m) / 60.0 + float(s) / 3600.0
 
 
-def exif_date_and_gps(path: Path):
-    """Best-effort EXIF date + (lat, lon). Vangt fouten af; HEIC kan falen
-    zonder pillow-heif — dan val we terug op de filename."""
-    date, lat, lon = "", "", ""
+def _offset_to_tz(off: str):
+    """EXIF-offsetstring ('+02:00' / '-04:00') → timezone, of None."""
+    m = re.match(r"^\s*([+-])(\d{2}):?(\d{2})\s*$", off or "")
+    if not m:
+        return None
+    sign = 1 if m.group(1) == "+" else -1
+    return datetime.timezone(sign * datetime.timedelta(hours=int(m.group(2)), minutes=int(m.group(3))))
+
+
+def exif_date_gps_device(path: Path):
+    """Best-effort EXIF: lokale datum, (lat,lon), tz-offset, toestel én het absolute
+    UTC-moment (datum + offset). Dat UTC-moment is de betrouwbare sorteersleutel: de
+    telefoonklok kan mid-reis van tijdzone wisselen (gezien NY 2026-06: vlucht-foto's
+    +02:00 Brussel, NY-foto's -04:00), waardoor de rauwe lokale tijd door elkaar loopt.
+    HEIC kan falen zonder pillow-heif → filename-fallback."""
+    date, lat, lon, offset, device, dt_utc = "", "", "", "", "", ""
     try:
         im = Image.open(path)
         ex = im._getexif() if hasattr(im, "_getexif") else None
@@ -81,6 +93,9 @@ def exif_date_and_gps(path: Path):
                 if tags.get(k):
                     date = str(tags[k]).strip().replace(":", "-", 2).replace(" ", "T")
                     break
+            offset = str(tags.get("OffsetTimeOriginal") or tags.get("OffsetTime") or "").strip()
+            mk, md = str(tags.get("Make") or "").strip(), str(tags.get("Model") or "").strip()
+            device = f"{mk} {md}".strip() if (mk or md) else ""
             gps = tags.get("GPSInfo")
             if gps:
                 g = {GPSTAGS.get(k, k): v for k, v in gps.items()}
@@ -91,9 +106,16 @@ def exif_date_and_gps(path: Path):
                     lon = to_deg(g["GPSLongitude"])
                     if g.get("GPSLongitudeRef") == "W":
                         lon = -lon
+            tz = _offset_to_tz(offset)
+            if date and tz:
+                try:
+                    naive = datetime.datetime.fromisoformat(date)
+                    dt_utc = naive.replace(tzinfo=tz).astimezone(datetime.timezone.utc).isoformat()
+                except ValueError:
+                    pass
     except Exception:
         pass
-    return date, lat, lon
+    return date, lat, lon, offset, device, dt_utc
 
 
 def fallback_date_from_name(name: str) -> str:
@@ -151,8 +173,9 @@ def main():
             if mtype == "video":
                 # Video: EXIF-parse is een ander beest; filename-fallback is genoeg voor de pilot.
                 date, lat, lon = fallback_date_from_name(p.name), "", ""
+                offset, device, dt_utc = "", "", ""
             else:
-                date, lat, lon = exif_date_and_gps(p)
+                date, lat, lon, offset, device, dt_utc = exif_date_gps_device(p)
                 if not date:
                     date = fallback_date_from_name(p.name)
             rel = str(p.relative_to(root)).replace("\\", "/")
@@ -161,13 +184,15 @@ def main():
                 "sha1": h, "path_rel": rel, "filename": p.name,
                 "media_type": mtype,
                 "mtime": mtime, "exif_date": date,
+                "tz_offset": offset, "dt_utc": dt_utc, "device": device,
                 "lat": lat, "lon": lon,
             })
             added += 1
             if i % 200 == 0:
                 print(f"  …{i}/{len(files)}  (nieuw={added} hergebruikt={reused})")
 
-    fields = ["sha1", "path_rel", "filename", "media_type", "mtime", "exif_date", "lat", "lon"]
+    fields = ["sha1", "path_rel", "filename", "media_type", "mtime", "exif_date",
+              "tz_offset", "dt_utc", "device", "lat", "lon"]
     with csv_path.open("w", encoding="utf-8", newline="") as f:
         w = csv.DictWriter(f, fieldnames=fields)
         w.writeheader()
@@ -178,10 +203,18 @@ def main():
     n_video = sum(1 for r in rows if r.get("media_type") == "video")
     with_gps = sum(1 for r in rows if r.get("lat") not in ("", None))
     with_date = sum(1 for r in rows if r.get("exif_date"))
+    with_off = sum(1 for r in rows if r.get("tz_offset"))
     print(f"[trip-photos-index] klaar: {len(rows)} rijen → {csv_path}")
     print(f"  foto's: {n_photo}   video's: {n_video}")
     print(f"  nieuw geïndexeerd: {added}   hergebruikt uit cache: {reused}   errors: {errors}")
-    print(f"  met datum: {with_date}/{len(rows)}   met GPS: {with_gps}/{len(rows)}")
+    print(f"  met datum: {with_date}/{len(rows)}   met GPS: {with_gps}/{len(rows)}   met tz-offset: {with_off}/{len(rows)}")
+    # Toestel-index: welke camera's/telefoons zitten in de set (multi-bron-reis). 'onbekend' =
+    # geen toestel-EXIF → vaak een doorgestuurd/gedeeld beeld of screenshot (geen eigen opname).
+    from collections import Counter
+    devs = Counter((r.get("device") or "onbekend (geen toestel-EXIF)") for r in rows if r.get("media_type", "photo") == "photo")
+    print("  toestellen:")
+    for d, c in devs.most_common():
+        print(f"    {c:5d}  {d}")
     print(f"  log: {log_path}")
 
 

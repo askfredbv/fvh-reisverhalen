@@ -26,10 +26,10 @@ Usage:
   python trip-merge.py --photos <mastermap> --trip <regio> --out <dossier> \\
     [--reviews <pad/naar/bhag-reviews-flat.csv>] [--place-radius 40] [--dup-window-secs 90]
 """
-import argparse, csv, json, math, sys
+import argparse, csv, json, math, re, sys
 from collections import defaultdict
 from pathlib import Path
-from datetime import datetime, date
+from datetime import datetime, date, timezone, timedelta
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -68,6 +68,42 @@ def to_float(s):
         return float(s)
     except (TypeError, ValueError):
         return None
+
+
+_FN_DT = re.compile(r"(\d{4})[-_]?(\d{2})[-_]?(\d{2})[ _T-]?(\d{2})[._:]?(\d{2})[._:]?(\d{2})?")
+
+
+def fname_dt(name: str) -> str:
+    """Genormaliseerde tijd uit een filename (bv. '2024-10-26 13.37.57.jpg')."""
+    m = _FN_DT.search(name or "")
+    if not m:
+        return ""
+    y, mo, d, hh, mm, ss = m.groups()
+    return f"{y}-{mo}-{d}T{hh}:{mm}:{ss or '00'}"
+
+
+def offset_to_tz(off: str):
+    m = re.match(r"^\s*([+-])(\d{2}):?(\d{2})\s*$", off or "")
+    if not m:
+        return None
+    sign = 1 if m.group(1) == "+" else -1
+    return timezone(sign * timedelta(hours=int(m.group(2)), minutes=int(m.group(3))))
+
+
+def canonical_local(p: dict, dest_tz):
+    """Lokale tijd in de bestemmings-tz, afgeleid van het absolute UTC-moment (dt_utc,
+    uit datum+offset in bouwsteen 1). Dat geeft één consistente klok over tijdzone-
+    grenzen heen → juiste chronologie en dag-indeling. Geen dt_utc (geen offset, bv.
+    een doorgestuurd beeld) → val terug op lokale tijd (exif/filename/mtime)."""
+    du = (p.get("dt_utc") or "").strip()
+    if du:
+        try:
+            return datetime.fromisoformat(du).astimezone(dest_tz).replace(tzinfo=None)
+        except ValueError:
+            pass
+    return (parse_dt(p.get("exif_date"))
+            or parse_dt(fname_dt(p.get("filename", "")))
+            or parse_dt(p.get("mtime")))
 
 
 def main():
@@ -132,13 +168,22 @@ def main():
             print(f"        · {lbl}")
         print("      Herstart met een needle die in het juiste label zit (bv. een regio-woord of jaar).")
 
+    # 2b) bestemmings-tijdzone = modale EXIF-offset. Alle tijden worden hierin uitgedrukt zodat
+    #     de chronologie klopt over tijdzone-grenzen (telefoonklok wisselt mid-reis van tz).
+    from collections import Counter
+    off_counter = Counter(p.get("tz_offset", "") for p in photos if p.get("tz_offset"))
+    modal_off = off_counter.most_common(1)[0][0] if off_counter else "+00:00"
+    dest_tz = offset_to_tz(modal_off) or timezone.utc
+    print(f"[trip-merge] bestemmings-tz (modale offset): {modal_off}"
+          + (f"   offsets: {dict(off_counter)}" if len(off_counter) > 1 else ""))
+
     # 3) plaats-mapping per foto via GPS
     rows = []
     for p in photos:
         sha1 = p["sha1"]
         v = vision.get(sha1, {})
         lat, lng = to_float(p.get("lat")), to_float(p.get("lon"))
-        dt = parse_dt(p.get("exif_date")) or parse_dt(p.get("mtime"))
+        dt = canonical_local(p, dest_tz)
         day = dt.date().isoformat() if dt else ""
         place_naam, place_dist, place_lat, place_lng = "", "", "", ""
         if lat is not None and lng is not None and places:
@@ -162,6 +207,7 @@ def main():
             "caption": v.get("caption", ""),
             "scene": v.get("scene", ""),
             "sign_text": v.get("sign_text", ""),
+            "device": p.get("device", ""),
             "_dt": dt,  # tijdelijk voor sortering
         })
 
@@ -209,7 +255,7 @@ def main():
     # 7) manifest.csv schrijven
     fields = ["sha1", "path_rel", "filename", "media_type", "datetime", "day",
               "lat", "lon", "place_name", "place_dist_km", "place_lat", "place_lng",
-              "caption", "scene", "sign_text", "dup_group", "prerank"]
+              "caption", "scene", "sign_text", "device", "dup_group", "prerank"]
     out_csv = out / "manifest.csv"
     with out_csv.open("w", encoding="utf-8", newline="") as f:
         w = csv.DictWriter(f, fieldnames=fields)
@@ -281,6 +327,20 @@ def main():
         print(f"  ⚠ dagen >21d buiten reis-zwaartepunt (controleer mastermap): {', '.join(outlier_days[:6])}"
               + (f" …+{len(outlier_days)-6}" if len(outlier_days) > 6 else ""))
     print(f"  per-dag overzicht: {out/'dag-overzicht.md'}")
+
+    # Tijdslijn-zelfcheck: de genormaliseerde tijd zou de filename-tijd moeten benaderen
+    # (filenames staan al in één tijdzone). Grote afwijking (>2u) = verdachte offset / tz-fout.
+    anomalies = []
+    for r in rows:
+        fdt = parse_dt(fname_dt(r["filename"]))
+        if fdt and r["_dt"]:
+            diff_h = abs((fdt - r["_dt"]).total_seconds()) / 3600
+            if diff_h > 2:
+                anomalies.append((r["filename"], round(diff_h, 1)))
+    n_checked = sum(1 for r in rows if parse_dt(fname_dt(r["filename"])) and r["_dt"])
+    print(f"  tijdslijn-check vs filename: {n_checked - len(anomalies)}/{n_checked} binnen 2u, {len(anomalies)} afwijkend")
+    for fn, h in anomalies[:6]:
+        print(f"    ⚠ {fn}: {h}u verschil (controleer offset/tz)")
 
 
 if __name__ == "__main__":

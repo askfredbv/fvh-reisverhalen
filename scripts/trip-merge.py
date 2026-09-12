@@ -135,6 +135,8 @@ def main():
     ap.add_argument("--trip", required=True, help="match-substring op de 'reis' kolom in reviews-csv (case-insensitive)")
     ap.add_argument("--out", required=True)
     ap.add_argument("--reviews", default=str(DEFAULT_REVIEWS))
+    ap.add_argument("--place-map", default="", help="optioneel: photo-places.csv van trip-timeline-places.py "
+                    "(tijd-gebaseerde plaats per sha1). Overschrijft de GPS-nearest-review waar aanwezig.")
     ap.add_argument("--place-radius", type=float, default=40.0, help="km — max afstand foto↔review om als plaats te tellen")
     ap.add_argument("--dup-window-secs", type=int, default=90, help="binnen N seconden + zelfde plaats = near-duplicate")
     args = ap.parse_args()
@@ -200,6 +202,20 @@ def main():
     print(f"[trip-merge] bestemmings-tz (modale offset): {modal_off}"
           + (f"   offsets: {dict(off_counter)}" if len(off_counter) > 1 else ""))
 
+    # 2c) optionele tijd-gebaseerde plaats-map (trip-timeline-places.py). Autoritair waar aanwezig:
+    #     die matcht op TIJD → het echte bezoek (Google placeId), i.p.v. de dichtste review-pin op
+    #     de foto-GPS (die faalt bij pinnen uit andere jaren of twee plekken vlak bij elkaar).
+    place_map = {}
+    if args.place_map:
+        pm_path = Path(args.place_map)
+        if not pm_path.exists():
+            sys.exit(f"--place-map opgegeven maar niet gevonden: {pm_path}")
+        with pm_path.open("r", encoding="utf-8", newline="") as f:
+            for r in csv.DictReader(f):
+                place_map[r["sha1"]] = r
+        n_named = sum(1 for r in place_map.values() if r.get("place_name"))
+        print(f"[trip-merge] place-map (tijd-gebaseerd): {n_named}/{len(place_map)} foto's met naam uit {pm_path.name}")
+
     # 3) plaats-mapping per foto via GPS
     rows = []
     clock_anoms = []  # device-klok (dt_utc) wijkt >2u af van de gebruikte filename-tijd
@@ -213,7 +229,19 @@ def main():
         if fdt and xdt and abs((xdt - fdt).total_seconds()) > 2 * 3600:
             clock_anoms.append((p["filename"], round(abs((xdt - fdt).total_seconds()) / 3600, 1)))
         place_naam, place_dist, place_lat, place_lng = "", "", "", ""
-        if lat is not None and lng is not None and places:
+        place_id, place_source, sterren = "", "", ""
+        pm = place_map.get(sha1)
+        if pm and pm.get("place_name"):
+            # autoritair: tijd-gebaseerde plaats (Google-bezoek op tijdstip)
+            place_naam = pm["place_name"]
+            place_lat, place_lng = pm.get("place_lat", ""), pm.get("place_lng", "")
+            place_id = pm.get("place_id", "")
+            place_source = pm.get("source", "")
+            sterren = pm.get("sterren", "")
+        elif not place_map and lat is not None and lng is not None and places:
+            # fallback ENKEL zonder tijd-map: dichtste review-pin op de foto-GPS.
+            # (Met tijd-map zou dit de cross-jaar-lek heropenen — bv. een 2023-Orvieto-pin op een
+            #  2026-transitfoto. Foto's zonder bezoek erven i.p.v. daarvan via stap 4, zelfde dag.)
             best, bestd = None, 1e9
             for pl in places:
                 d = hav_km((lat, lng), (pl["lat"], pl["lng"]))
@@ -223,6 +251,8 @@ def main():
                 place_naam = best["naam"]
                 place_dist = round(bestd, 2)
                 place_lat, place_lng = best["lat"], best["lng"]
+                sterren = best.get("sterren", "")
+                place_source = "gps-review"
         rows.append({
             "sha1": sha1, "path_rel": p["path_rel"], "filename": p["filename"],
             "media_type": p.get("media_type", "photo"),
@@ -231,6 +261,7 @@ def main():
             "lat": p.get("lat", ""), "lon": p.get("lon", ""),
             "place_name": place_naam, "place_dist_km": place_dist,
             "place_lat": place_lat, "place_lng": place_lng,
+            "place_id": place_id, "place_source": place_source, "sterren": sterren,
             "caption": v.get("caption", ""),
             "scene": v.get("scene", ""),
             "sign_text": v.get("sign_text", ""),
@@ -283,6 +314,7 @@ def main():
     # 7) manifest.csv schrijven
     fields = ["sha1", "path_rel", "filename", "media_type", "datetime", "day",
               "lat", "lon", "place_name", "place_dist_km", "place_lat", "place_lng",
+              "place_id", "place_source", "sterren",
               "caption", "scene", "sign_text", "device", "privacy_flag", "dup_group", "prerank"]
     out_csv = out / "manifest.csv"
     with out_csv.open("w", encoding="utf-8", newline="") as f:

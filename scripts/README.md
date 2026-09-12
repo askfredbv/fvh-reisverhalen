@@ -65,11 +65,14 @@ argument contract and are **idempotent** (sha1-keyed caches) — interruption is
 TRIP=Japan
 PHOTOS="C:/claude/fvh.com/scratch/japan-werk/20250920 - Reis naar Japan"
 OUT="C:/claude/fvh.com/exports/trip-japan"
+TIMELINE="C:/claude/fvh.com/downloads/Tijdlijn.json"
 
-python scripts/trip-photos-index.py  --photos "$PHOTOS" --trip "$TRIP" --out "$OUT"   # 1. fact-tabel
-python scripts/trip-vision-tag.py    --photos "$PHOTOS" --trip "$TRIP" --out "$OUT"   # 2. Gemma (nacht)
-python scripts/trip-merge.py         --photos "$PHOTOS" --trip "$TRIP" --out "$OUT"   # 3. dossier
-python scripts/trip-contactsheet.py  --photos "$PHOTOS" --trip "$TRIP" --out "$OUT"   # 4. HTML+picks
+python scripts/trip-photos-index.py    --photos "$PHOTOS" --trip "$TRIP" --out "$OUT"   # 1. fact-tabel
+python scripts/trip-vision-tag.py      --photos "$PHOTOS" --trip "$TRIP" --out "$OUT"   # 2. Gemma (nacht)
+python scripts/trip-timeline-places.py --out "$OUT" --timeline "$TIMELINE"              # 3a. plaats op TIJD (aanbevolen)
+python scripts/trip-merge.py           --photos "$PHOTOS" --trip "$TRIP" --out "$OUT" \
+       --place-map "$OUT/photo-places.csv"                                              # 3. dossier
+python scripts/trip-contactsheet.py    --photos "$PHOTOS" --trip "$TRIP" --out "$OUT"   # 4. HTML+picks
 ```
 
 Per bouwsteen:
@@ -86,6 +89,21 @@ Per bouwsteen:
   - **Waarschuwt bij 100% CPU** (geen GPU-offload, ~2-3× trager). Veelal fix: herstart Ollama met
     **`OLLAMA_VULKAN=0`** (forceert CUDA i.p.v. de trage Vulkan-default in 0.30.7).
   - Output is line-buffered → live voortgang in een background/scheduled log.
+- **3a · `trip-timeline-places.py`** (aanbevolen voorstap vóór de merge, 2026-09) — lost de plaats per foto op
+  via **tijd** i.p.v. GPS-nearest-review. Matcht elke foto op haar `dt_utc` in het juiste **Google-Timeline-
+  bezoek** (`Tijdlijn.json` → `placeId` + coords, óók voor foto's zonder GPS), en benoemt dat via de **Places
+  API (New)** op de placeId + Frederiks reviews (gematcht op coördinaat binnen het **reisvenster**, zo lekken
+  pinnen uit andere jaren niet). → `photo-places.csv` (sha1, place_id, naam, coords, sterren, source) +
+  `cache/places.json`. Lost de drie GPS-nearest-fouten op: **cross-jaar-pinnen** (bv. 2023-Orvieto-pin op een
+  2026-Bolsena-foto), **buurplekken** (Pizza Zizza vs Bloom vlak naast elkaar) en **foto's zonder GPS**.
+  100% lokaal, behalve de optionele Places-veeg.
+  - **Places API-key:** zet `GOOGLE_MAPS_API_KEY` als omgevingsvariabele (op het GCP-project: **Places API
+    (New)** enabled + billing aan; beperk de key tot enkel die API). Zonder key vallen de namen terug op de
+    reviews (dekte ~93% op Italië 2026). Geslaagde lookups worden gecached → eenmalig per reis, kost verwaarloosbaar.
+  - **⚠ Windows-gotcha:** `setx` laadt de key enkel in **nieuwe** terminals (al-draaiende processen niet) —
+    draai `trip-timeline-places.py` in een **vers** venster.
+  - **Verscherpt op Italië 2026-09:** 41 unieke plekken correct benoemd, 0 onbekend; de oude Orvieto/Bloom-
+    labels verdwenen. Edge: foto's op een visit-grens pakken soms de buur-plek (Google's eigen bezoek-log).
 - **3 · `trip-merge.py`** — joint `photos.csv` + `vision.csv` + `bhag-reviews-flat.csv` tot één
   `manifest.csv` per reis: per foto dag + plaats (nearest review op GPS, default 40 km), near-dup-cluster.
   ⚠️ `--trip` is een **substring-match op de datum-gecodeerde `reis`-kolom** (bv. `VS-oostkust`,
@@ -94,6 +112,10 @@ Per bouwsteen:
   (default 90s + zelfde plaats), pre-rank (scène-prioriteit → één hero-kandidaat per cluster). Plaats
   voor GPS-loze foto's wordt geërfd van de dichtste foto-met-GPS op dezelfde dag (gemarkeerd "(≈)").
   Outlier-waarschuwing voor dagen >21d buiten het reis-zwaartepunt. → `manifest.csv` + `dag-overzicht.md`.
+  - **`--place-map photo-places.csv` (van 3a):** neemt de plaats **autoritair** uit de tijd-map en schakelt
+    de GPS-nearest-review-fallback **uit** (anders heropent die de cross-jaar-lek via een oude pin op een
+    transitfoto). Foto's zonder timeline-bezoek erven dan van een buurfoto op dezelfde dag ("(≈)"). Manifest
+    krijgt extra kolommen `place_id`, `place_source`, `sterren`. Zonder `--place-map` = het oude GPS-gedrag (40 km).
   - **Chronologie over tijdzones:** sorteert primair op de **filename-tijd** (genormaliseerd naar één
     tijdzone = de Windows-mapvolgorde; immuun voor foute telefoonklokken), met het EXIF-UTC-moment
     (`dt_utc` → bestemmings-tz) als fallback. Een **klok-kruiscontrole** logt foto's wiens device-klok
@@ -124,6 +146,9 @@ naar elke stap; `--model`/`--limit` naar vision-tag, `--reviews` naar merge. Smo
 ```bash
 python scripts/run-trip.py --photos "$PHOTOS" --trip "$TRIP" --out "$OUT"
 ```
+
+⚠ `run-trip.py` chained (nog) **1→4 zonder 3a**. Voor de scherpe tijd-plaats-mapping: draai
+`trip-timeline-places.py` los ná stap 2 en geef de merge `--place-map "$OUT/photo-places.csv"` mee (zie hierboven).
 
 Daarna pick je je helden in de contactsheet en draai je bouwsteen 5 (`trip-image-prep`).
 

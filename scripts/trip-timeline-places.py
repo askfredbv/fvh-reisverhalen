@@ -91,6 +91,53 @@ def photo_utc(p):
     return None
 
 
+def places_nearby(lat, lng, key, cache, radius_m):
+    """Places API (New) Nearby Search op een coördinaat → populairste plek in de buurt.
+    Voor wandelfoto's van monumenten (Trevi, Pantheon, Sint-Pietersplein) die Google niet als
+    apart bezoek logde. Gecached per afgeronde coord. Geeft (naam, place_id, lat, lng)."""
+    ck = f"nb:{round(lat, 4)},{round(lng, 4)}"
+    c = cache.get(ck)
+    if c and c.get("name"):
+        return c["name"], c.get("place_id", ""), c.get("lat"), c.get("lng")
+    if not key:
+        return "", "", None, None
+    body = json.dumps({
+        "maxResultCount": 1,
+        "rankPreference": "POPULARITY",
+        "locationRestriction": {"circle": {"center": {"latitude": lat, "longitude": lng}, "radius": float(radius_m)}},
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        "https://places.googleapis.com/v1/places:searchNearby", data=body, method="POST",
+        headers={"X-Goog-Api-Key": key, "Content-Type": "application/json",
+                 "X-Goog-FieldMask": "places.displayName,places.id,places.location"})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            data = json.loads(r.read().decode("utf-8"))
+        places = data.get("places") or []
+        if not places:
+            return "", "", None, None
+        p0 = places[0]
+        name = (p0.get("displayName") or {}).get("text", "")
+        pid = p0.get("id", "")
+        loc = p0.get("location") or {}
+        la, lo = loc.get("latitude"), loc.get("longitude")
+        if name:
+            cache[ck] = {"name": name, "place_id": pid, "lat": la, "lng": lo}
+        time.sleep(0.05)
+        return name, pid, la, lo
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", "replace")
+        m = re.search(r'"message":\s*"([^"]+)"', body)
+        reason = (m.group(1)[:90] if m else f"HTTP {e.code}")
+        if reason not in _ERR_SEEN:
+            _ERR_SEEN.add(reason)
+            print(f"  ⚠ Places Nearby {e.code}: {reason}")
+        return "", "", None, None
+    except Exception as e:
+        print(f"  ⚠ Places Nearby fout: {e}")
+        return "", "", None, None
+
+
 _ERR_SEEN = set()  # dedup: print elke onderscheiden foutreden max 1x
 
 
@@ -137,6 +184,9 @@ def main():
     ap.add_argument("--reviews", default=str(DEFAULT_REVIEWS))
     ap.add_argument("--coord-radius-km", type=float, default=0.3, help="max afstand bezoek↔review voor naam/sterren")
     ap.add_argument("--near-minutes", type=int, default=45, help="foto buiten elk bezoek-venster → dichtste bezoek binnen N min")
+    ap.add_argument("--gps-gate-km", type=float, default=0.2, help="out-of-window-foto met eigen GPS verder dan dit van "
+                    "het dichtste bezoek → herbenoem op eigen GPS via Places Nearby (lost wandelfoto's van monumenten op)")
+    ap.add_argument("--nearby-radius-m", type=float, default=100.0, help="straal voor Places Nearby op de foto-GPS")
     ap.add_argument("--window-pre-days", type=int, default=7, help="reisvenster: dagen vóór eerste fotodag")
     ap.add_argument("--window-post-days", type=int, default=75, help="reisvenster: dagen ná laatste fotodag (reviews komen later)")
     args = ap.parse_args()
@@ -257,15 +307,75 @@ def main():
     print(f"[places] Places API: {'AAN (key gevonden)' if key else 'UIT (geen env-key) — namen enkel uit reviews'}"
           + (f"   cache: {len(cache)} plekken" if cache else ""))
 
+    # 3b) wandelfoto-correctie: out-of-window-foto's met eigen GPS die ver van hun toegewezen bezoek
+    #     liggen (Trevi/Pantheon/Sint-Pietersplein e.d., die Google niet als apart bezoek logde), plus
+    #     foto's zonder bezoek maar mét GPS → herbenoem op de EIGEN GPS via Places Nearby.
+    def pf(p):
+        try:
+            return float(p["lat"]), float(p["lon"])
+        except Exception:
+            return None
+
+    targets = []
+    for p in photos:
+        g = pf(p)
+        if g is None:
+            continue
+        pid, la, lo, how = per_photo[p["sha1"]]
+        if how.startswith("timeline-window"):
+            continue  # echte stop (in-window): vertrouwen
+        far = True
+        if la not in ("", None):
+            try:
+                far = hav_km(g, (float(la), float(lo))) > args.gps_gate_km
+            except Exception:
+                far = True
+        if how == "" or far:
+            targets.append((p["sha1"], g))
+
+    pid_name_hint = {}  # place_id → naam uit Nearby (skip de Details-call)
+    n_nearby = 0
+    if targets and key:
+        clusters = []  # greedy ~120 m
+        for sha1, (la, lo) in targets:
+            for c in clusters:
+                if hav_km((la, lo), (c["lat"], c["lng"])) < 0.12:
+                    c["members"].append(sha1)
+                    break
+            else:
+                clusters.append({"lat": la, "lng": lo, "members": [sha1]})
+        for c in clusters:
+            name, pid, la2, lo2 = places_nearby(c["lat"], c["lng"], key, cache, args.nearby_radius_m)
+            if not name or not pid:
+                continue
+            plat = la2 if la2 is not None else c["lat"]
+            plng = lo2 if lo2 is not None else c["lng"]
+            pid_name_hint[pid] = name
+            pid_coords.setdefault(pid, (plat, plng))
+            for sha1 in c["members"]:
+                per_photo[sha1] = (pid, plat, plng, "gps-nearby")
+            n_nearby += 1
+        print(f"[places] Nearby-correctie: {len(clusters)} GPS-clusters → {n_nearby} benoemd "
+              f"(wandelfoto's van monumenten, buiten een geregistreerd bezoek)")
+    elif targets and not key:
+        print(f"[places] {len(targets)} out-of-window-foto's met GPS zouden baat hebben bij Places Nearby "
+              f"(geen key → overgeslagen)")
+
     pid_info = {}  # place_id → (name, sterren, source_naam)
-    n_api = n_rev = n_blank = 0
+    n_api = n_rev = n_blank = n_nb = 0
     for pid, (la, lo) in pid_coords.items():
-        name, _addr = places_lookup(pid, key, cache) if pid else ("", "")
+        name = pid_name_hint.get(pid, "")
+        src = "places-nearby" if name else ""
+        if not name:
+            name, _addr = places_lookup(pid, key, cache) if pid else ("", "")
+            if name:
+                src = "places-api"
         rv, _ = nearest_review(la, lo)
         sterren = rv["sterren"] if rv else ""
-        if name:
+        if src == "places-nearby":
+            n_nb += 1
+        elif src == "places-api":
             n_api += 1
-            src = "places-api"
         elif rv and rv["naam"]:
             name = rv["naam"]
             n_rev += 1
@@ -275,7 +385,7 @@ def main():
             src = "onbekend"
         pid_info[pid] = (name, sterren, src)
     cache_path.write_text(json.dumps(cache, ensure_ascii=False, indent=0), encoding="utf-8")
-    print(f"[places] naamgeving: via Places-API {n_api}   via review-coord {n_rev}   naamloos {n_blank}")
+    print(f"[places] naamgeving: Places-Details {n_api}   Nearby {n_nb}   review-coord {n_rev}   naamloos {n_blank}")
 
     # 5) schrijven
     fields = ["sha1", "place_id", "place_name", "place_lat", "place_lng", "sterren", "source"]

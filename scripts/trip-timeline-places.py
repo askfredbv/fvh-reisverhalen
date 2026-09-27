@@ -13,9 +13,12 @@ absolute tijdstip (photos.csv `dt_utc`) in het juiste bezoek → placeId + exact
 Dat lost toewijzing op voor ÁLLE foto's (ook zonder GPS, ook de Zwitserland-transit).
 
 Naamgeving van dat bezoek (twee bronnen, in volgorde):
-  a. Google Places API (New) op de placeId → officiële naam. Vereist env-key
-     GOOGLE_MAPS_API_KEY (of GOOGLE_PLACES_API_KEY); gecached in <out>/cache/places.json.
-     Zonder key wordt deze stap stil overgeslagen.
+  a. Google Places API (New) op de placeId → officiële naam. Auth (het script kiest zelf):
+       - Service-Account OAuth (voorkeur): --sa-key <SA-JSON> of env GOOGLE_APPLICATION_CREDENTIALS.
+         Nodig als de API-key streng gerestricteerd is en API_KEY_SERVICE_BLOCKED geeft: de SA
+         omzeilt de key (bearer-token + X-Goog-User-Project), de key blijft ongemoeid.
+       - API-key (fallback): env GOOGLE_MAPS_API_KEY (of GOOGLE_PLACES_API_KEY).
+     Zonder auth wordt deze stap stil overgeslagen. Namen gecached in <out>/cache/places.json.
   b. Frederiks eigen reviews (naam + sterren), gematcht op coördinaat (tight) binnen het
      REISVENSTER (zo kan een pin uit een ander jaar niet matchen).
 
@@ -23,11 +26,12 @@ OUTPUT: <out>/photo-places.csv  (sha1, place_id, place_name, place_lat, place_ln
         → trip-merge.py leest dit via --place-map en gebruikt het i.p.v. GPS-nearest-review.
 
 Privacy: Timeline + reviews blijven lokaal. Enkel de Places-veeg stuurt placeIds (jouw eigen
-Google-data) naar Google, en enkel als je de env-key zet.
+Google-data) naar Google, en enkel als je auth (--sa-key of env-key) meegeeft.
 
 Usage:
   python trip-timeline-places.py --out <dossier> --timeline <Tijdlijn.json> \\
-    [--reviews <bhag-reviews-merged.csv>] [--coord-radius-km 0.3] [--near-minutes 45]
+    [--sa-key <service-account.json>] [--reviews <bhag-reviews-merged.csv>] \\
+    [--coord-radius-km 0.3] [--near-minutes 45]
 """
 import argparse, csv, json, math, os, re, sys, time, bisect, urllib.request, urllib.error
 from datetime import datetime, timezone, timedelta
@@ -39,6 +43,49 @@ except Exception:
     pass
 
 DEFAULT_REVIEWS = Path("C:/claude/fvh.com/downloads/bhag-reviews-merged.csv")
+
+# --- Auth: Service-Account OAuth (voorkeur) of API-key (fallback) ------------
+# OAuth laat Frederiks API-key ongemoeid (die mag streng gerestricteerd blijven):
+# de SA autoriseert de Places-call met een bearer-token + X-Goog-User-Project.
+_AUTH = {"mode": None}  # "oauth" | "key" | None
+
+
+def build_auth(sa_key_path):
+    """Kies auth-modus. sa_key_path (of env GOOGLE_APPLICATION_CREDENTIALS) → OAuth;
+    anders GOOGLE_MAPS_API_KEY/GOOGLE_PLACES_API_KEY → API-key; anders None (Places uit)."""
+    if sa_key_path and Path(sa_key_path).exists():
+        from google.oauth2 import service_account
+        from google.auth.transport.requests import Request as _GRequest
+        creds = service_account.Credentials.from_service_account_file(
+            sa_key_path, scopes=["https://www.googleapis.com/auth/cloud-platform"])
+        _AUTH.update(mode="oauth", creds=creds, req=_GRequest(),
+                     project=getattr(creds, "project_id", None))
+        return "oauth"
+    key = os.environ.get("GOOGLE_MAPS_API_KEY") or os.environ.get("GOOGLE_PLACES_API_KEY") or ""
+    if key:
+        _AUTH.update(mode="key", key=key)
+        return "key"
+    _AUTH.update(mode=None)
+    return None
+
+
+def auth_on():
+    return _AUTH["mode"] is not None
+
+
+def auth_headers(extra):
+    """Merge auth-headers in extra (dict). OAuth → Bearer + user-project; anders API-key."""
+    h = dict(extra)
+    if _AUTH["mode"] == "oauth":
+        creds = _AUTH["creds"]
+        if not creds.valid:
+            creds.refresh(_AUTH["req"])
+        h["Authorization"] = f"Bearer {creds.token}"
+        if _AUTH.get("project"):
+            h["X-Goog-User-Project"] = _AUTH["project"]
+    elif _AUTH["mode"] == "key":
+        h["X-Goog-Api-Key"] = _AUTH["key"]
+    return h
 
 
 def U(s):
@@ -91,7 +138,7 @@ def photo_utc(p):
     return None
 
 
-def places_nearby(lat, lng, key, cache, radius_m):
+def places_nearby(lat, lng, cache, radius_m):
     """Places API (New) Nearby Search op een coördinaat → populairste plek in de buurt.
     Voor wandelfoto's van monumenten (Trevi, Pantheon, Sint-Pietersplein) die Google niet als
     apart bezoek logde. Gecached per afgeronde coord. Geeft (naam, place_id, lat, lng)."""
@@ -99,7 +146,7 @@ def places_nearby(lat, lng, key, cache, radius_m):
     c = cache.get(ck)
     if c and c.get("name"):
         return c["name"], c.get("place_id", ""), c.get("lat"), c.get("lng")
-    if not key:
+    if not auth_on():
         return "", "", None, None
     body = json.dumps({
         "maxResultCount": 1,
@@ -108,8 +155,8 @@ def places_nearby(lat, lng, key, cache, radius_m):
     }).encode("utf-8")
     req = urllib.request.Request(
         "https://places.googleapis.com/v1/places:searchNearby", data=body, method="POST",
-        headers={"X-Goog-Api-Key": key, "Content-Type": "application/json",
-                 "X-Goog-FieldMask": "places.displayName,places.id,places.location"})
+        headers=auth_headers({"Content-Type": "application/json",
+                 "X-Goog-FieldMask": "places.displayName,places.id,places.location"}))
     try:
         with urllib.request.urlopen(req, timeout=15) as r:
             data = json.loads(r.read().decode("utf-8"))
@@ -141,20 +188,19 @@ def places_nearby(lat, lng, key, cache, radius_m):
 _ERR_SEEN = set()  # dedup: print elke onderscheiden foutreden max 1x
 
 
-def places_lookup(place_id, key, cache):
+def places_lookup(place_id, cache):
     """Google Places API (New) → displayName. Enkel GESLAAGDE lookups (naam≠leeg) worden
     gecached, zodat een herdraai na het aanzetten van de API de mislukte plekken opnieuw
     probeert. Geeft (naam, adres) of ('','')."""
     c = cache.get(place_id)
     if c and c.get("name"):
         return c["name"], c.get("address", "")
-    if not key:
+    if not auth_on():
         return "", ""
     url = f"https://places.googleapis.com/v1/places/{place_id}"
-    req = urllib.request.Request(url, headers={
-        "X-Goog-Api-Key": key,
+    req = urllib.request.Request(url, headers=auth_headers({
         "X-Goog-FieldMask": "displayName,formattedAddress",
-    })
+    }))
     try:
         with urllib.request.urlopen(req, timeout=15) as r:
             data = json.loads(r.read().decode("utf-8"))
@@ -189,6 +235,9 @@ def main():
     ap.add_argument("--nearby-radius-m", type=float, default=100.0, help="straal voor Places Nearby op de foto-GPS")
     ap.add_argument("--window-pre-days", type=int, default=7, help="reisvenster: dagen vóór eerste fotodag")
     ap.add_argument("--window-post-days", type=int, default=75, help="reisvenster: dagen ná laatste fotodag (reviews komen later)")
+    ap.add_argument("--sa-key", default=os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"),
+                    help="pad naar Service-Account JSON → Places via OAuth (key blijft ongemoeid). "
+                         "Default: env GOOGLE_APPLICATION_CREDENTIALS.")
     args = ap.parse_args()
 
     out = Path(args.out)
@@ -300,12 +349,13 @@ def main():
     print(f"[places] foto→bezoek: in-window {n_win}   nearest {n_near}   geen {n_none}   unieke plekken: {len(pid_coords)}")
 
     # 4) naam + sterren per unieke placeId
-    key = os.environ.get("GOOGLE_MAPS_API_KEY") or os.environ.get("GOOGLE_PLACES_API_KEY") or ""
+    mode = build_auth(args.sa_key)
     cache_path = out / "cache" / "places.json"
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     cache = json.loads(cache_path.read_text(encoding="utf-8")) if cache_path.exists() else {}
-    print(f"[places] Places API: {'AAN (key gevonden)' if key else 'UIT (geen env-key) — namen enkel uit reviews'}"
-          + (f"   cache: {len(cache)} plekken" if cache else ""))
+    _mode_txt = {"oauth": f"AAN (OAuth / service-account, project {_AUTH.get('project')})",
+                 "key": "AAN (API-key)"}.get(mode, "UIT (geen auth) — namen enkel uit reviews")
+    print(f"[places] Places API: {_mode_txt}" + (f"   cache: {len(cache)} plekken" if cache else ""))
 
     # 3b) wandelfoto-correctie: out-of-window-foto's met eigen GPS die ver van hun toegewezen bezoek
     #     liggen (Trevi/Pantheon/Sint-Pietersplein e.d., die Google niet als apart bezoek logde), plus
@@ -335,7 +385,7 @@ def main():
 
     pid_name_hint = {}  # place_id → naam uit Nearby (skip de Details-call)
     n_nearby = 0
-    if targets and key:
+    if targets and auth_on():
         clusters = []  # greedy ~120 m
         for sha1, (la, lo) in targets:
             for c in clusters:
@@ -345,7 +395,7 @@ def main():
             else:
                 clusters.append({"lat": la, "lng": lo, "members": [sha1]})
         for c in clusters:
-            name, pid, la2, lo2 = places_nearby(c["lat"], c["lng"], key, cache, args.nearby_radius_m)
+            name, pid, la2, lo2 = places_nearby(c["lat"], c["lng"], cache, args.nearby_radius_m)
             if not name or not pid:
                 continue
             plat = la2 if la2 is not None else c["lat"]
@@ -357,9 +407,9 @@ def main():
             n_nearby += 1
         print(f"[places] Nearby-correctie: {len(clusters)} GPS-clusters → {n_nearby} benoemd "
               f"(wandelfoto's van monumenten, buiten een geregistreerd bezoek)")
-    elif targets and not key:
+    elif targets and not auth_on():
         print(f"[places] {len(targets)} out-of-window-foto's met GPS zouden baat hebben bij Places Nearby "
-              f"(geen key → overgeslagen)")
+              f"(geen auth → overgeslagen)")
 
     pid_info = {}  # place_id → (name, sterren, source_naam)
     n_api = n_rev = n_blank = n_nb = 0
@@ -367,7 +417,7 @@ def main():
         name = pid_name_hint.get(pid, "")
         src = "places-nearby" if name else ""
         if not name:
-            name, _addr = places_lookup(pid, key, cache) if pid else ("", "")
+            name, _addr = places_lookup(pid, cache) if pid else ("", "")
             if name:
                 src = "places-api"
         rv, _ = nearest_review(la, lo)
@@ -403,8 +453,9 @@ def main():
                         "place_lat": la, "place_lng": lo, "sterren": sterren,
                         "source": (how + ("/" + nsrc if how and nsrc else "")) if how else ""})
     print(f"[places] klaar: {outp}   foto's met naam: {n_named}/{len(photos)}")
-    if not key:
-        print("       ↳ zet GOOGLE_MAPS_API_KEY en herdraai voor de namen van niet-gereviewde plekken.")
+    if not auth_on():
+        print("       ↳ geef --sa-key (service-account JSON) of zet GOOGLE_MAPS_API_KEY en herdraai "
+              "voor de namen van niet-gereviewde plekken.")
 
 
 if __name__ == "__main__":

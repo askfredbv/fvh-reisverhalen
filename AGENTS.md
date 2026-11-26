@@ -2,6 +2,17 @@
 
 > Loads automatically when a session opens here. Separate project from fvh-2027 by design — don't mix.
 
+## Scope: what belongs in this project, and what does not (set 2026-11-26)
+- **Here:** making and publishing content for frederikvanhecke.com, mostly travel posts: photo
+  pipeline, kapstok, draft, image prep, publishing and the live check of the post itself.
+  Sessions for this work sit in the sidebar section **"content - fvh"** and start in this folder.
+- **Not here:** the site itself. Drupal, theme and layout, security, performance, hosting, deploy,
+  SEO technique. That is `C:\Github\fvh-2027` (section "website - fvh"), and its open items live in
+  that project's ledger, not in this one. If a content session runs into a site defect: note it
+  there in one line, do not fix it here.
+- **The SOP and the startprompt** are in fvh-2027 `knowledge/reispost-runbook.md`. Read it at the
+  start of every post. It is not copied here.
+
 ## The BHAG
 Turn Frederik's **1000+ photo-folder archive** (15 years, structure `YYYYMMDD - Event description`) into
 a stream of high-quality **travel articles** for frederikvanhecke.com. Travel is the site's proven engine
@@ -68,9 +79,10 @@ multiplies across every article. That's *why* fvh is being perfected first. The 
 when write → optimise → schema → publish → perf → social is confirmed flawless on the existing posts.
 
 ## Status
-**Content-pijp bewezen op de NY-pilot (2026-06-10)** — bouwsteen 1→5 (index → vision-tag → merge →
-contactsheet → image-prep) end-to-end gedraaid op de volle NY-set (1172 foto's vision-getagd, dossier
-+ web-beelden), en de scripts gehard met de infra-lessen van die run (zie `scripts/README.md`).
-⚠️ **De bulk-run + publicatie blijven gated** op de publish-foundation hierboven — de NY-run was een
-pilot/hardening-test, niet de start van de bulk. Volgende stap: heldenkeuze in de NY-contactsheet →
-het NY-artikel uitschrijven; pas daarna schalen naar de overige reizen.
+**Not kept here, because it went stale here.** This section said "next step: the NY article" until
+November, while NY had been live since 2026-06-20. Current state lives in the memory ledger
+(`open-work-ledger.md`, read first). Publication state never comes from memory either: one curl on
+`https://frederikvanhecke.com/sitemap.xml` is the check.
+
+The pipeline (bouwsteen 1 to 5) was proven on the NY pilot in June 2026, see `scripts/README.md`.
+⚠️ The bulk-run gate above stays **Frederik's call**: a go for one post is not a go for the bulk.

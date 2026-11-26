@@ -3,9 +3,12 @@
 > Loads automatically when a session opens here. Separate project from fvh-2027 by design — don't mix.
 
 ## Scope: what belongs in this project, and what does not (set 2026-11-26)
-- **Here:** making and publishing content for frederikvanhecke.com, mostly travel posts: photo
-  pipeline, kapstok, draft, image prep, publishing and the live check of the post itself.
-  Sessions for this work sit in the sidebar section **"content - fvh"** and start in this folder.
+- **Here:** travel posts for frederikvanhecke.com, and only those: photo pipeline, kapstok, draft,
+  image prep, publishing and the live check of the post itself. Sessions for this work sit in the
+  sidebar section **"content - fvh"** and start in this folder.
+- **Other content** (AI/data, DIY, tech notes, recipes) needs none of the photo pipeline and leans on
+  site knowledge: it is written in `C:\Github\fvh-2027`, per `knowledge/content-pipeline.md`, in
+  section "website - fvh" (Frederik, 2026-11-26).
 - **Not here:** the site itself. Drupal, theme and layout, security, performance, hosting, deploy,
   SEO technique. That is `C:\Github\fvh-2027` (section "website - fvh"), and its open items live in
   that project's ledger, not in this one. If a content session runs into a site defect: note it
